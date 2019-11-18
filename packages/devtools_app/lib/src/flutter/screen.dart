@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 import 'package:flutter/material.dart';
-import 'package:flutter_icons/flutter_icons.dart';
 
 import 'scaffold.dart';
 
@@ -22,47 +21,4 @@ abstract class Screen {
 
   /// Builds the body to display for this tab.
   Widget build(BuildContext context);
-}
-
-/// A placeholder screen that hasn't been implemented.
-class EmptyScreen extends Screen {
-  const EmptyScreen(String name, this.icon) : super(name);
-
-  static final EmptyScreen timeline = EmptyScreen(
-    'Timeline',
-    Octicons.getIconData('pulse'),
-  );
-
-  static final EmptyScreen memory = EmptyScreen(
-    'Memory',
-    Octicons.getIconData('package'),
-  );
-
-  static final EmptyScreen logging = EmptyScreen(
-    'Logging',
-    Octicons.getIconData('clippy'),
-  );
-
-  /// The icon to show for this screen in a tab.
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final style = theme.textTheme.headline.copyWith(color: theme.accentColor);
-    return Center(
-      child: Text(
-        '$name Page',
-        style: style,
-      ),
-    );
-  }
-
-  @override
-  Widget buildTab(BuildContext context) {
-    return Tab(
-      text: name,
-      icon: Icon(icon),
-    );
-  }
 }

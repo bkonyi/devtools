@@ -9,13 +9,15 @@ import '../../src/framework/framework_core.dart';
 import '../debugger/flutter/debugger_screen.dart';
 import '../info/flutter/info_screen.dart';
 import '../inspector/flutter/inspector_screen.dart';
+import '../logging/flutter/logging_screen.dart';
+import '../memory/flutter/memory_screen.dart';
 import '../performance/flutter/performance_screen.dart';
+import '../timeline/flutter/timeline_screen.dart';
 import '../ui/flutter/service_extension_widgets.dart';
 import '../ui/theme.dart' as devtools_theme;
 import 'connect_screen.dart';
 import 'initializer.dart';
 import 'scaffold.dart';
-import 'screen.dart';
 import 'theme.dart';
 
 /// Top-level configuration for the app.
@@ -96,21 +98,18 @@ class DevToolsAppState extends State<DevToolsApp> {
     '/': (_, params) => Initializer(
           url: params['uri'],
           builder: (_) => DevToolsScaffold(
-            tabs: [
-              const InspectorScreen(),
-              EmptyScreen.timeline,
-              const PerformanceScreen(),
-              EmptyScreen.memory,
-              const DebuggerScreen(),
-              EmptyScreen.logging,
-              const InfoScreen(),
+            tabs: const [
+              InspectorScreen(),
+              TimelineScreen(),
+              PerformanceScreen(),
+              MemoryScreen(),
+              DebuggerScreen(),
+              LoggingScreen(),
+              InfoScreen(),
             ],
             actions: [
               HotReloadButton(),
               HotRestartButton(),
-              const Padding(
-                padding: EdgeInsets.only(left: 8.0),
-              ),
             ],
           ),
         ),

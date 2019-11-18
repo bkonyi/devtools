@@ -6,23 +6,39 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
-/// Provides functionality to automatically unsubscribe from streams on dispose.
-///
-/// Use this class to ensure you don't leak stream subscriptions.
-mixin AutoDisposeMixin<T extends StatefulWidget> on State<T> {
-  final List<StreamSubscription> _subscriptions = [];
+import '../auto_dispose.dart';
 
-  /// Track a stream subscription to be automatically cancelled on dispose.
-  void autoDispose(StreamSubscription subscription) {
-    _subscriptions.add(subscription);
-  }
+/// Mixin to simplifying managing the lifetime of listeners used by a
+/// [StatefulWidget].
+///
+/// This mixin works by delegating to a [Disposer]. It implements all of
+/// [Disposer]'s interface.
+///
+/// See also:
+/// * [AutoDisposeControllerMixin], which provides the same functionality for
+///   controller classes.
+mixin AutoDisposeMixin<T extends StatefulWidget> on State<T>
+    implements Disposer {
+  final Disposer _delegate = Disposer();
 
   @override
   void dispose() {
-    for (StreamSubscription subscription in _subscriptions) {
-      subscription.cancel();
-    }
-    _subscriptions.clear();
+    cancel();
     super.dispose();
+  }
+
+  @override
+  void addAutoDisposeListener(Listenable listenable, listener) {
+    _delegate.addAutoDisposeListener(listenable, listener);
+  }
+
+  @override
+  void autoDispose(StreamSubscription subscription) {
+    _delegate.autoDispose(subscription);
+  }
+
+  @override
+  void cancel() {
+    _delegate.cancel();
   }
 }

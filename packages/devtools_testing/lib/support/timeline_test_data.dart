@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 // ignore_for_file: implementation_imports
+import 'dart:convert';
 
 import 'package:devtools_app/src/timeline/timeline_controller.dart'
     show timelineScreenId, TimelineMode;
@@ -399,7 +400,9 @@ final gpuRasterizerDrawTrace = testTraceEventWrapper({
   'pid': 94955,
   'ts': 118039651469,
   'ph': 'B',
-  'args': {}
+  'args': {
+    'isolateId': 'id_001',
+  }
 });
 final pipelineConsumeTrace = testTraceEventWrapper({
   'name': 'PipelineConsume',
@@ -430,6 +433,91 @@ final endGpuRasterizerDrawTrace = testTraceEventWrapper({
 });
 
 // Mark: AsyncTimelineData
+final asyncEventWithInstantChildren = AsyncTimelineEvent(TraceEventWrapper(
+  TraceEvent(jsonDecode(jsonEncode({
+    'name': 'PipelineItem',
+    'cat': 'Embedder',
+    'tid': 19333,
+    'pid': 94955,
+    'ts': 118039650806,
+    'ph': 's',
+    'id': 'f1',
+    'args': {
+      'isolateId': 'id_001',
+      'parentId': '07bf',
+    },
+  }))),
+  0,
+))
+  ..addEndEvent(TraceEventWrapper(
+    TraceEvent(jsonDecode(jsonEncode({
+      'name': 'PipelineItem',
+      'cat': 'Embedder',
+      'tid': 19334,
+      'pid': 94955,
+      'ts': 118039679872,
+      'ph': 'f',
+      'bp': 'e',
+      'id': 'f1',
+      'args': {},
+    }))),
+    1,
+  ))
+  ..type = TimelineEventType.async
+  ..children.addAll([
+    instantAsync1..time.end = instantAsync1.time.start,
+    instantAsync2..time.end = instantAsync2.time.start,
+    instantAsync3..time.end = instantAsync3.time.start,
+  ]);
+
+final instantAsync1 = AsyncTimelineEvent(TraceEventWrapper(
+  TraceEvent(jsonDecode(jsonEncode({
+    'name': 'Connection established',
+    'cat': 'Dart',
+    'tid': 19333,
+    'pid': 94955,
+    'ts': 118039660806,
+    'ph': 'n',
+    'id': 'f1',
+    'args': {
+      'isolateId': 'id_001',
+    },
+  }))),
+  0,
+));
+
+final instantAsync2 = AsyncTimelineEvent(TraceEventWrapper(
+  TraceEvent(jsonDecode(jsonEncode({
+    'name': 'Connection established',
+    'cat': 'Dart',
+    'tid': 19334,
+    'pid': 94955,
+    'ts': 118039665806,
+    'ph': 'n',
+    'id': 'f1',
+    'args': {
+      'isolateId': 'id_001',
+    },
+  }))),
+  1,
+));
+
+final instantAsync3 = AsyncTimelineEvent(TraceEventWrapper(
+  TraceEvent(jsonDecode(jsonEncode({
+    'name': 'Connection established',
+    'cat': 'Dart',
+    'tid': 19334,
+    'pid': 94955,
+    'ts': 118039670806,
+    'ph': 'n',
+    'id': 'f1',
+    'args': {
+      'isolateId': 'id_001',
+    },
+  }))),
+  1,
+));
+
 final goldenAsyncTimelineEvent = asyncEventA
   ..children.addAll([
     asyncEventB..children.addAll([asyncEventB1, asyncEventB2]),
@@ -514,7 +602,7 @@ final asyncStartBTrace = testTraceEventWrapper({
   'ts': 193937113560,
   'ph': 'b',
   'id': '2',
-  'args': {'parentId': 1, 'isolateId': 'isolates/2139247553966975'},
+  'args': {'parentId': '1', 'isolateId': 'isolates/2139247553966975'},
 });
 final asyncEndBTrace = testTraceEventWrapper({
   'name': 'B',
@@ -534,7 +622,7 @@ final asyncStartB1Trace = testTraceEventWrapper({
   'ts': 193937141769,
   'ph': 'b',
   'id': 'd',
-  'args': {'parentId': 2, 'isolateId': 'isolates/2139247553966975'},
+  'args': {'parentId': '2', 'isolateId': 'isolates/2139247553966975'},
 });
 final asyncEndB1Trace = testTraceEventWrapper({
   'name': 'B1',
@@ -554,7 +642,7 @@ final asyncStartB2Trace = testTraceEventWrapper({
   'ts': 193937173019,
   'ph': 'b',
   'id': 'e',
-  'args': {'parentId': 2, 'isolateId': 'isolates/2139247553966975'},
+  'args': {'parentId': '2', 'isolateId': 'isolates/2139247553966975'},
 });
 final asyncEndB2Trace = testTraceEventWrapper({
   'name': 'B2',
@@ -574,7 +662,7 @@ final asyncStartCTrace = testTraceEventWrapper({
   'ts': 193937168961,
   'ph': 'b',
   'id': '3',
-  'args': {'parentId': 1, 'isolateId': 'isolates/2139247553966975'},
+  'args': {'parentId': '1', 'isolateId': 'isolates/2139247553966975'},
 });
 final asyncEndCTrace = testTraceEventWrapper({
   'name': 'C',
@@ -594,7 +682,7 @@ final asyncStartC1Trace = testTraceEventWrapper({
   'ts': 193937220903,
   'ph': 'b',
   'id': '11',
-  'args': {'parentId': 3, 'isolateId': 'isolates/2139247553966975'}
+  'args': {'parentId': '3', 'isolateId': 'isolates/2139247553966975'}
 });
 final asyncEndC1Trace = testTraceEventWrapper({
   'name': 'C1',
@@ -614,7 +702,7 @@ final asyncStartC2Trace = testTraceEventWrapper({
   'ts': 193937378812,
   'ph': 'b',
   'id': '12',
-  'args': {'parentId': 3, 'isolateId': 'isolates/2139247553966975'}
+  'args': {'parentId': '3', 'isolateId': 'isolates/2139247553966975'}
 });
 final asyncEndC2Trace = testTraceEventWrapper({
   'name': 'C2',

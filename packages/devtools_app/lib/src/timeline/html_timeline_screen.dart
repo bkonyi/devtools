@@ -43,20 +43,29 @@ import 'timeline_processor.dart';
 const enableMultiModeTimeline = true;
 
 class HtmlTimelineScreen extends HtmlScreen {
-  HtmlTimelineScreen({bool enabled, String disabledTooltip})
-      : super(
+  HtmlTimelineScreen(
+    this.startTimelineMode, {
+    bool enabled,
+    String disabledTooltip,
+  }) : super(
           name: 'Timeline',
           id: timelineScreenId,
           iconClass: 'octicon-pulse',
           enabled: enabled,
           disabledTooltip: disabledTooltip,
-        );
+        ) {
+    timelineController.timelineMode = startTimelineMode;
+  }
+
+  final TimelineMode startTimelineMode;
 
   TimelineController timelineController = TimelineController();
 
   FramesBarChart framesBarChart;
 
   CoreElement flameChartContainer;
+
+  CoreElement _emptyFlameChart;
 
   FlameChartCanvas timelineFlameChartCanvas;
 
@@ -109,7 +118,6 @@ class HtmlTimelineScreen extends HtmlScreen {
     pauseButton = PButton.icon('Pause recording', FlutterIcons.pause_white_2x)
       ..small()
       ..primary()
-      ..hidden(timelineController.timelineMode == TimelineMode.full)
       ..click(_pauseFrameRecording);
 
     resumeButton =
@@ -117,20 +125,17 @@ class HtmlTimelineScreen extends HtmlScreen {
           ..small()
           ..clazz('margin-left')
           ..disabled = timelineController.frameBasedTimeline.manuallyPaused
-          ..hidden(timelineController.timelineMode == TimelineMode.full)
           ..click(_resumeFrameRecording);
 
     _startRecordingButton = PButton.icon('Record', recordPrimary)
       ..small()
       ..primary()
-      ..hidden(timelineController.timelineMode == TimelineMode.frameBased)
       ..click(() async => await _startFullRecording());
 
     _stopRecordingButton = PButton.icon('Stop', stop)
       ..small()
       ..clazz('margin-left')
       ..disabled = !timelineController.fullTimeline.recording
-      ..hidden(timelineController.timelineMode == TimelineMode.frameBased)
       ..click(_stopFullRecording);
 
     _recordingInstructions = createRecordingInstructions(
@@ -163,7 +168,6 @@ class HtmlTimelineScreen extends HtmlScreen {
     )
       ..small()
       ..setAttribute('title', 'Exit offline mode to connect to a VM Service.')
-      ..setAttribute('hidden', 'true')
       ..click(_exitOfflineMode);
 
     performanceOverlayButton = ServiceExtensionButton(performanceOverlay);
@@ -220,8 +224,13 @@ class HtmlTimelineScreen extends HtmlScreen {
               div(c: 'timeline-flame-chart-container section-border')
                 ..flex()
                 ..layoutVertical()
-                ..hidden(true),
-          eventDetails = HtmlEventDetails(timelineController)..hidden(true),
+                ..add([
+                  _emptyFlameChart =
+                      div(), // Dummy for modifying the flame chart.
+                  _recordingInstructions,
+                  _recordingStatus,
+                ]),
+          eventDetails = HtmlEventDetails(timelineController),
         ]),
     ]);
 
@@ -232,6 +241,11 @@ class HtmlTimelineScreen extends HtmlScreen {
 
   @override
   void onContentAttached() {
+    _updateVisibilityForTimelineMode();
+    if (timelineController.timelineMode == TimelineMode.full) {
+      _configureSplitter();
+    }
+
     timelineController.frameBasedTimeline.onSelectedFrame.listen((_) {
       _selectFrame();
     });
@@ -254,7 +268,7 @@ class HtmlTimelineScreen extends HtmlScreen {
           eventDetails.titleTextColor = node.textColor;
           timelineController.selectTimelineEvent(node.data);
         });
-        flameChartContainer.add(timelineFlameChartCanvas.element);
+        _setFlameChart(timelineFlameChartCanvas.element);
 
         _configureSplitter();
       })
@@ -286,7 +300,7 @@ class HtmlTimelineScreen extends HtmlScreen {
       }
 
       if (timelineController.offlineTimelineData.hasCpuProfileData()) {
-        splitter.setSizes([50, 50]);
+        _configureSplitter(sizes: [50, 50]);
       }
     });
 
@@ -327,10 +341,15 @@ class HtmlTimelineScreen extends HtmlScreen {
     observer.observe(flameChartContainer.element);
   }
 
+  void _setFlameChart(CoreElement flameChart) {
+    // If the container does not have a flame chart yet, this call will replace
+    // the dummy element added in `createContent`.
+    assert(flameChartContainer.element.children.length == 3);
+    flameChartContainer.replace(0, flameChart);
+  }
+
   void _selectFrame() {
-    flameChartContainer
-      ..clear()
-      ..hidden(false);
+    flameChartContainer.hidden(false);
     final TimelineFrame frame =
         timelineController.frameBasedTimeline.data.selectedFrame;
     timelineFlameChartCanvas = FrameBasedTimelineFlameChartCanvas(
@@ -349,7 +368,7 @@ class HtmlTimelineScreen extends HtmlScreen {
       eventDetails.titleTextColor = node.textColor;
       timelineController.selectTimelineEvent(node.data);
     });
-    flameChartContainer.add(timelineFlameChartCanvas.element);
+    _setFlameChart(timelineFlameChartCanvas.element);
 
     _configureSplitter();
   }
@@ -367,7 +386,8 @@ class HtmlTimelineScreen extends HtmlScreen {
             sectionSpacing;
   }
 
-  void _configureSplitter() {
+  void _configureSplitter({List<int> sizes}) {
+    assert(sizes == null || sizes.length == 2);
     // Configure the flame chart / event details splitter if we haven't
     // already.
     if (!splitterConfigured) {
@@ -379,10 +399,12 @@ class HtmlTimelineScreen extends HtmlScreen {
             [flameChartContainer.element, eventDetails.element]),
         horizontal: false,
         gutterSize: defaultSplitterWidth,
-        sizes: [75, 25],
+        sizes: sizes ?? [75, 25],
         minSize: [50, 90],
       );
       splitterConfigured = true;
+    } else if (sizes != null) {
+      splitter.setSizes(sizes);
     }
   }
 
@@ -395,21 +417,21 @@ class HtmlTimelineScreen extends HtmlScreen {
 
   @override
   void entering() async {
-    await _updateListeningState();
+    await timelineController.timelineService.updateListeningState(true);
     _updateButtonStates();
     await _profileGranularitySelector.setGranularity();
   }
 
   @override
   void exiting() async {
-    await _updateListeningState();
+    await timelineController.timelineService.updateListeningState(false);
     _updateButtonStates();
   }
 
   Future<void> prepareViewForOfflineData(TimelineMode timelineMode) async {
     await clearTimeline();
     framesBarChart.hidden(timelineMode == TimelineMode.full);
-    flameChartContainer.clear();
+    _setFlameChart(_emptyFlameChart);
     flameChartContainer.hidden(timelineMode == TimelineMode.frameBased);
     eventDetails.hidden(timelineMode == TimelineMode.frameBased);
     _recordingInstructions.hidden(true);
@@ -430,10 +452,10 @@ class HtmlTimelineScreen extends HtmlScreen {
     // changes the value of [offlineMode], which the button states depend on.
     framework.exitOfflineMode();
 
-    // Revert to the previously selected mode on offline exit. We already
-    // cleared the timeline data - do not repeat this action.
+    // Revert to [startTimelineMode]. We already cleared the timeline data - do
+    // not repeat this action.
     _setTimelineMode(
-      timelineMode: timelineController.timelineMode,
+      timelineMode: startTimelineMode,
       clearTimeline: false,
     );
     _updateButtonStates();
@@ -444,7 +466,8 @@ class HtmlTimelineScreen extends HtmlScreen {
     timelineController.frameBasedTimeline.pause(manual: true);
     ga.select(ga.timeline, ga.pause);
     _updateButtonStates();
-    await _updateListeningState();
+    await timelineController.timelineService
+        .updateListeningState(isCurrentScreen);
   }
 
   Future<void> _resumeFrameRecording() async {
@@ -452,7 +475,8 @@ class HtmlTimelineScreen extends HtmlScreen {
     timelineController.frameBasedTimeline.resume();
     ga.select(ga.timeline, ga.resume);
     _updateButtonStates();
-    await _updateListeningState();
+    await timelineController.timelineService
+        .updateListeningState(isCurrentScreen);
   }
 
   Future<void> _startFullRecording() async {
@@ -482,29 +506,20 @@ class HtmlTimelineScreen extends HtmlScreen {
     // share data. For simplicity, we will start by having each mode be aware of
     // only its own data and clearing on mode switch.
     if (clearTimeline) {
-      timelineController.timeline.data.clear();
+      timelineController.timeline.data?.clear();
     }
 
     timelineController.timelineMode = timelineMode;
-    _updateButtonStates();
 
-    // Update visibility and then reset - the order matters here.
-    framesBarChart
-      ..hidden(timelineMode == TimelineMode.full)
-      ..frameUIgraph.reset(
-          displayRefreshRate:
-              await timelineController.frameBasedTimeline.displayRefreshRate);
+    // Update visibility and then do resets - the order matters here.
+    _updateVisibilityForTimelineMode();
+
+    framesBarChart.frameUIgraph.reset(
+        displayRefreshRate:
+            await timelineController.frameBasedTimeline.displayRefreshRate);
 
     timelineFlameChartCanvas = null;
-    flameChartContainer
-      ..clear()
-      ..hidden(timelineMode == TimelineMode.frameBased);
-    if (timelineMode == TimelineMode.full) {
-      flameChartContainer.add([
-        _recordingInstructions..hidden(false),
-        _recordingStatus..hidden(true),
-      ]);
-    }
+    _setFlameChart(_emptyFlameChart);
 
     eventDetails.reset(hide: timelineMode == TimelineMode.frameBased);
 
@@ -515,7 +530,8 @@ class HtmlTimelineScreen extends HtmlScreen {
     }
   }
 
-  void _updateButtonStates() {
+  void _updateButtonStates() async {
+    final isDartCliApp = await serviceManager.connectedApp.isDartCliApp;
     pauseButton
       ..disabled = timelineController.frameBasedTimeline.manuallyPaused
       ..hidden(
@@ -536,7 +552,7 @@ class HtmlTimelineScreen extends HtmlScreen {
     (_timelineModeCheckbox.element as html.InputElement).checked =
         timelineController.timelineMode == TimelineMode.frameBased;
 
-    _timelineModeSettingContainer.hidden(offlineMode);
+    _timelineModeSettingContainer.hidden(offlineMode || isDartCliApp);
 
     clearButton
       ..disabled = timelineController.fullTimeline.recording
@@ -544,33 +560,33 @@ class HtmlTimelineScreen extends HtmlScreen {
     exportButton
       ..disabled = timelineController.fullTimeline.recording
       ..hidden(offlineMode);
-    performanceOverlayButton.button.hidden(offlineMode);
+    performanceOverlayButton.button.hidden(offlineMode || isDartCliApp);
     _profileGranularitySelector.selector.hidden(offlineMode);
     exitOfflineModeButton.hidden(!offlineMode);
   }
 
-  Future<void> _updateListeningState() async {
-    final bool shouldBeRunning =
-        (!timelineController.frameBasedTimeline.manuallyPaused ||
-                timelineController.fullTimeline.recording) &&
-            !offlineMode &&
-            isCurrentScreen;
-    final bool isRunning = !timelineController.frameBasedTimeline.paused ||
-        timelineController.fullTimeline.recording;
-    await timelineController.timelineService.updateListeningState(
-      shouldBeRunning: shouldBeRunning,
-      isRunning: isRunning,
-    );
+  void _updateVisibilityForTimelineMode() {
+    _updateButtonStates();
+    framesBarChart.hidden(timelineController.timelineMode == TimelineMode.full);
+    flameChartContainer
+        .hidden(timelineController.timelineMode == TimelineMode.frameBased);
+    _recordingInstructions
+        .hidden(timelineController.timelineMode == TimelineMode.frameBased);
+    _recordingStatus.hidden(true);
+    eventDetails
+        .hidden(timelineController.timelineMode == TimelineMode.frameBased);
   }
 
   Future<void> clearTimeline() async {
     await timelineController.clearData();
+    _setFlameChart(_emptyFlameChart);
     flameChartContainer
         .hidden(timelineController.timelineMode == TimelineMode.frameBased);
     timelineFlameChartCanvas?.element?.element?.remove();
     timelineFlameChartCanvas = null;
     eventDetails.reset(
         hide: timelineController.timelineMode == TimelineMode.frameBased);
+    _recordingStatus.hidden(true);
 
     switch (timelineController.timelineMode) {
       case TimelineMode.frameBased:

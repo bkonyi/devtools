@@ -5,15 +5,30 @@
 import 'dart:async';
 
 import 'package:devtools_app/src/connected_app.dart';
+
+import 'package:devtools_app/src/flutter/initializer.dart' as initializer;
+import 'package:devtools_app/src/flutter/controllers.dart';
+import 'package:devtools_app/src/logging/logging_controller.dart';
 import 'package:devtools_app/src/service_extensions.dart' as extensions;
 import 'package:devtools_app/src/service_manager.dart';
+import 'package:devtools_app/src/stream_value_listenable.dart';
+import 'package:devtools_app/src/timeline/timeline_controller.dart';
+import 'package:devtools_app/src/timeline/timeline_model.dart';
+import 'package:devtools_app/src/ui/fake_flutter/fake_flutter.dart';
 import 'package:devtools_app/src/vm_service_wrapper.dart';
 import 'package:meta/meta.dart';
 import 'package:mockito/mockito.dart';
+import 'package:vm_service/vm_service.dart';
 
-class MockServiceManager extends Mock implements ServiceConnectionManager {
+class FakeServiceManager extends Fake implements ServiceConnectionManager {
+  FakeServiceManager({bool useFakeService = false, this.hasConnection = true})
+      : service = useFakeService ? FakeVmService() : MockVmService();
+
   @override
-  final VmServiceWrapper service = MockVmService();
+  final VmServiceWrapper service;
+
+  @override
+  final Completer serviceAvailable = Completer()..complete();
 
   @override
   final ConnectedApp connectedApp = MockConnectedApp();
@@ -25,16 +40,101 @@ class MockServiceManager extends Mock implements ServiceConnectionManager {
   Stream<VmServiceWrapper> get onConnectionAvailable => Stream.value(service);
 
   @override
-  final bool hasConnection = true;
+  final bool hasConnection;
+
+  @override
+  final IsolateManager isolateManager = MockIsolateManager();
 
   @override
   final FakeServiceExtensionManager serviceExtensionManager =
       FakeServiceExtensionManager();
+
+  @override
+  StreamSubscription<bool> hasRegisteredService(
+    String name,
+    void onData(bool value),
+  ) {
+    return Stream.value(false).listen(onData);
+  }
+
+  @override
+  Stream<bool> get onStateChange => const Stream.empty();
 }
+
+class FakeVmService extends Fake implements VmServiceWrapper {
+  final _flags = <String, dynamic>{
+    'flags': <Flag>[],
+  };
+
+  @override
+  Future<Success> setFlag(String name, String value) {
+    final List<Flag> flags = _flags['flags'];
+    final existingFlag =
+        flags.firstWhere((f) => f.name == name, orElse: () => null);
+    if (existingFlag != null) {
+      existingFlag.valueAsString = value;
+    } else {
+      flags.add(Flag.parse({
+        'name': name,
+        'comment': 'Mock Flag',
+        'modified': true,
+        'valueAsString': value,
+      }));
+    }
+    return Future.value(Success());
+  }
+
+  @override
+  Future<FlagList> getFlagList() => Future.value(FlagList.parse(_flags));
+
+  final _vmTimelineFlags = <String, dynamic>{
+    'type': 'TimelineFlags',
+    'recordedStreams': [],
+  };
+
+  @override
+  Future<Success> setVMTimelineFlags(List<String> recordedStreams) async {
+    _vmTimelineFlags['recordedStreams'] = recordedStreams;
+    return Future.value(Success());
+  }
+
+  @override
+  Future<TimelineFlags> getVMTimelineFlags() =>
+      Future.value(TimelineFlags.parse(_vmTimelineFlags));
+
+  @override
+  Stream<Event> onEvent(String streamName) => const Stream.empty();
+
+  @override
+  Stream<Event> get onStdoutEvent => const Stream.empty();
+
+  @override
+  Stream<Event> get onStderrEvent => const Stream.empty();
+
+  @override
+  Stream<Event> get onGCEvent => const Stream.empty();
+
+  @override
+  Stream<Event> get onLoggingEvent => const Stream.empty();
+
+  @override
+  Stream<Event> get onExtensionEvent => const Stream.empty();
+}
+
+class MockIsolateManager extends Mock implements IsolateManager {}
+
+class MockServiceManager extends Mock implements ServiceConnectionManager {}
 
 class MockVmService extends Mock implements VmServiceWrapper {}
 
 class MockConnectedApp extends Mock implements ConnectedApp {}
+
+class MockLoggingController extends Mock implements LoggingController {}
+
+class MockTimelineController extends Mock implements TimelineController {}
+
+class MockFrameBasedTimelineData extends Mock
+    implements FrameBasedTimelineData {}
 
 /// Fake that simplifies writing UI tests that depend on the
 /// ServiceExtensionManager.
@@ -47,6 +147,8 @@ class FakeServiceExtensionManager extends Fake
   final Map<String, StreamController<bool>> _serviceExtensionController = {};
   final Map<String, StreamController<ServiceExtensionState>>
       _serviceExtensionStateController = {};
+
+  final Map<String, ValueListenable<bool>> _serviceExtensionListenables = {};
 
   /// All available service extensions.
   final _serviceExtensions = <String>{};
@@ -70,6 +172,25 @@ class FakeServiceExtensionManager extends Fake
   }
 
   Map<String, dynamic> extensionValueOnDevice = {};
+
+  @override
+  ValueListenable<bool> hasServiceExtensionListener(String name) {
+    return _serviceExtensionListenables.putIfAbsent(
+      name,
+      () => StreamValueListenable<bool>(
+        (notifier) {
+          return hasServiceExtension(name, (value) {
+            notifier.value = value;
+          });
+        },
+        () => _hasServiceExtensionNow(name),
+      ),
+    );
+  }
+
+  bool _hasServiceExtensionNow(String name) {
+    return _serviceExtensions.contains(name);
+  }
 
   /// Hook for tests to call to simulate adding a service extension.
   Future<void> fakeAddServiceExtension(String name) async {
@@ -289,4 +410,27 @@ StreamController<T> _getStreamController<T>(
     () => StreamController<T>.broadcast(onListen: onFirstListenerSubscribed),
   );
   return streamControllers[name];
+}
+
+class TestProvidedControllers extends Fake implements ProvidedControllers {
+  TestProvidedControllers() {
+    disposed[this] = false;
+  }
+  @override
+  void dispose() {
+    disposed[this] = true;
+  }
+}
+
+final disposed = <TestProvidedControllers, bool>{};
+
+Future<void> ensureInspectorDependencies() async {
+  assert(
+    !kIsWeb,
+    'Attempted to resolve a package path from web code.\n'
+    'Package path resolution uses dart:io, which is not available in web.'
+    '\n'
+    "To fix this, mark the failing test as @TestOn('vm')",
+  );
+  await initializer.ensureInspectorDependencies();
 }

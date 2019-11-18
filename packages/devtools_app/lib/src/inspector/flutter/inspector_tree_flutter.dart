@@ -8,12 +8,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:pedantic/pedantic.dart';
 
+import '../../flutter/auto_dispose_mixin.dart';
 import '../../flutter/collapsible_mixin.dart';
 import '../../ui/colors.dart';
 import '../diagnostics_node.dart';
 import '../inspector_controller.dart';
 import '../inspector_tree.dart';
 import 'diagnostics.dart';
+import 'inspector_data_models.dart';
 import 'summary_tree_debug_layout.dart';
 
 /// Presents a [TreeNode].
@@ -181,7 +183,8 @@ class InspectorTree extends StatefulWidget {
 class _InspectorTreeState extends State<InspectorTree>
     with
         SingleTickerProviderStateMixin,
-        AutomaticKeepAliveClientMixin<InspectorTree>
+        AutomaticKeepAliveClientMixin<InspectorTree>,
+        AutoDisposeMixin
     implements InspectorControllerClient {
   final defaultAnimationDuration = const Duration(milliseconds: 150);
   final slowAnimationDuration = const Duration(milliseconds: 300);
@@ -213,6 +216,18 @@ class _InspectorTreeState extends State<InspectorTree>
       );
     }
     _bindToController();
+  }
+
+  @override
+  void didUpdateWidget(InspectorTree oldWidget) {
+    if (oldWidget.controller != widget.controller) {
+      final InspectorTreeControllerFlutter oldController = oldWidget.controller;
+      oldController?.client = null;
+      cancel();
+
+      _bindToController();
+    }
+    super.didUpdateWidget(oldWidget);
   }
 
   @override
@@ -345,12 +360,6 @@ class _InspectorTreeState extends State<InspectorTree>
     return maxOffset - viewportDimension;
   }
 
-  @override
-  void didUpdateWidget(Widget oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _bindToController();
-  }
-
   void _listenToDebugSummaryLayoutChanges() {
     if (debugSummaryLayoutEnabled.value) {
       constraintDisplayController.forward();
@@ -362,7 +371,8 @@ class _InspectorTreeState extends State<InspectorTree>
   void _bindToController() {
     controller?.client = this;
     if (isSummaryTree) {
-      debugSummaryLayoutEnabled?.addListener(
+      addAutoDisposeListener(
+        debugSummaryLayoutEnabled,
         _listenToDebugSummaryLayoutChanges,
       );
     }
@@ -414,7 +424,7 @@ class _InspectorTreeState extends State<InspectorTree>
 }
 
 final _defaultPaint = Paint()
-  // TODO(kenz): try to use color from Theme.of(context) for treeGuidelineColor
+// TODO(kenz): try to use color from Theme.of(context) for treeGuidelineColor
   ..color = treeGuidelineColor
   ..strokeWidth = chartLineStrokeWidth;
 
@@ -532,7 +542,7 @@ class InspectorRowContent extends StatelessWidget {
                       onTap: onToggle,
                       child: RotationTransition(
                         turns: expandAnimation,
-                        child: Icon(
+                        child: const Icon(
                           Icons.expand_more,
                           size: 16.0,
                         ),
@@ -559,7 +569,7 @@ class InspectorRowContent extends StatelessWidget {
                   constraintDisplayController != null)
                 ConstraintsDescription(
                   listenable: constraintDisplayController,
-                  diagnostic: node.diagnostic,
+                  properties: LayoutProperties(node.diagnostic),
                 ),
             ],
           ),
