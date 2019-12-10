@@ -80,6 +80,21 @@ class HtmlPerfToolFramework extends HtmlFramework {
           .open('https://github.com/flutter/devtools/issues', '_feedback');
     });
 
+    // Listen for clicks on the 'Try DevTools on Flutter Web' button.
+    queryId('try-flutter-web-devtools')
+      ..hidden = false
+      ..onClick.listen((_) {
+        var href = '/flutter.html#/';
+        // Preserve query parameters when opening the Flutter demo so the
+        // user does not need to go through the connect dialog again.
+        final flutterQueryParams =
+            Uri.tryParse(html.window.location.href).queryParameters ?? {};
+        if (flutterQueryParams.isNotEmpty) {
+          href += Uri(queryParameters: flutterQueryParams).toString();
+        }
+        html.window.location.href = href;
+      });
+
     await serviceManager.serviceAvailable.future;
     await addScreens();
     screensReady.complete();
@@ -91,7 +106,7 @@ class HtmlPerfToolFramework extends HtmlFramework {
       final link = CoreElement('a')
         ..add(<CoreElement>[
           span(c: 'octicon ${screen.iconClass}'),
-          span(text: ' ${screen.name}', c: 'optional-1060')
+          span(text: ' ${screen.name}', c: 'optional-1140')
         ]);
       if (screen.disabled) {
         link
@@ -277,27 +292,27 @@ class HtmlPerfToolFramework extends HtmlFramework {
   }
 
   void _initHotReloadRestartServiceListeners() {
-    serviceManager.hasRegisteredService(
-      registrations.hotReload.service,
-      (bool reloadServiceAvailable) {
-        if (reloadServiceAvailable) {
-          _buildReloadButton();
-        } else {
-          removeGlobalAction(_reloadActionId);
-        }
-      },
-    );
+    final hotReloadListenable = serviceManager
+        .registeredServiceListenable(registrations.hotReload.service);
+    hotReloadListenable.addListener(() {
+      final reloadServiceAvailable = hotReloadListenable.value;
+      if (reloadServiceAvailable) {
+        _buildReloadButton();
+      } else {
+        removeGlobalAction(_reloadActionId);
+      }
+    });
 
-    serviceManager.hasRegisteredService(
-      registrations.hotRestart.service,
-      (bool reloadServiceAvailable) {
-        if (reloadServiceAvailable) {
-          _buildRestartButton();
-        } else {
-          removeGlobalAction(_restartActionId);
-        }
-      },
-    );
+    final hotRestartListenable = serviceManager
+        .registeredServiceListenable(registrations.hotReload.service);
+    hotRestartListenable.addListener(() {
+      final restartServiceAvailable = hotRestartListenable.value;
+      if (restartServiceAvailable) {
+        _buildRestartButton();
+      } else {
+        removeGlobalAction(_restartActionId);
+      }
+    });
   }
 
   void _buildReloadButton() async {

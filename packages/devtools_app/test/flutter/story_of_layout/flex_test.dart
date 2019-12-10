@@ -5,14 +5,17 @@
 import 'dart:convert';
 
 import 'package:devtools_app/src/inspector/diagnostics_node.dart';
-import 'package:devtools_app/src/inspector/flutter/inspector_data_models.dart';
 import 'package:devtools_app/src/inspector/flutter/story_of_your_layout/flex.dart';
+import 'package:devtools_app/src/inspector/inspector_tree.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../inspector_screen_test.dart';
 import '../wrappers.dart';
 
+// TODO(albertusangga): Re-enable tests in this files
+// https://github.com/flutter/devtools/issues/1403
 void main() {
   const windowSize = Size(1750, 1750);
 
@@ -29,16 +32,14 @@ void main() {
         "constraints": {
             "type": "BoxConstraints",
             "description": "BoxConstraints(w=300.0, h=60.0)",
-            "hasBoundedHeight": true,
-            "hasBoundedWidth": true,
-            "minWidth": 300.0,
-            "minHeight": 60.0,
-            "maxHeight": 60.0,
-            "maxWidth": 300.0
+            "minWidth": "300.0",
+            "minHeight": "60.0",
+            "maxHeight": "60.0",
+            "maxWidth": "300.0"
         },
         "size": {
-            "width": 300.0,
-            "height": 60.0
+            "width": "300.0",
+            "height": "60.0"
         },
         "isFlex": true,
         "children": [
@@ -54,15 +55,14 @@ void main() {
                 "constraints": {
                     "type": "BoxConstraints",
                     "description": "BoxConstraints(0.0<=w<=Infinity, 0.0<=h<=56.0)",
-                    "hasBoundedHeight": true,
-                    "hasBoundedWidth": false,
-                    "minWidth": 0.0,
-                    "minHeight": 0.0,
-                    "maxHeight": 56.0
+                    "minWidth": "0.0",
+                    "minHeight": "0.0",
+                    "maxHeight": "56.0",
+                    "maxWidth": "Infinity"
                 },
                 "size": {
-                    "width": 56.0,
-                    "height": 25.0
+                    "width": "56.0",
+                    "height": "25.0"
                 },
                 "flexFactor": null,
                 "createdByLocalProject": true,
@@ -82,16 +82,14 @@ void main() {
                 "constraints": {
                     "type": "BoxConstraints",
                     "description": "BoxConstraints(w=40.0, 0.0<=h<=56.0)",
-                    "hasBoundedHeight": true,
-                    "hasBoundedWidth": true,
-                    "minWidth": 40.0,
-                    "minHeight": 0.0,
-                    "maxHeight": 56.0,
-                    "maxWidth": 40.0
+                    "minWidth": "40.0",
+                    "minHeight": "0.0",
+                    "maxHeight": "56.0",
+                    "maxWidth": "40.0"
                 },
                 "size": {
-                    "width": 40.0,
-                    "height": 31.0
+                    "width": "40.0",
+                    "height": "31.0"
                 },
                 "flexFactor": 1,
                 "createdByLocalProject": true,
@@ -231,90 +229,54 @@ void main() {
     }
     ''');
 
-  Widget wrap(Widget widget) => MaterialApp(home: Scaffold(body: widget));
+  Widget wrap(Widget widget) {
+    return MaterialApp(
+      home: Scaffold(body: widget),
+    );
+  }
 
-  group('Row', () {
+  /// current workaround for flaky image asset testing.
+  /// https://github.com/flutter/flutter/issues/38997
+  Future<void> pump(WidgetTester tester, Widget w) async {
+    await tester.runAsync(() async {
+      await tester.pumpWidget(w);
+      for (var element in find.byType(Image).evaluate()) {
+        final Image widget = element.widget;
+        final ImageProvider image = widget.image;
+        await precacheImage(image, element);
+        await tester.pumpAndSettle();
+      }
+    });
+  }
+
+  testWidgetsWithWindowSize('Row golden test', windowSize,
+      (WidgetTester tester) async {
     final rowWidgetJsonNode = buildDiagnosticsNodeJson(Axis.horizontal);
-    final node = RemoteDiagnosticsNode(rowWidgetJsonNode, null, false, null);
+    final diagnostic =
+        RemoteDiagnosticsNode(rowWidgetJsonNode, null, false, null);
+    final treeNode = InspectorTreeNode()..diagnostic = diagnostic;
+    final controller = TestInspectorController()..setSelectedNode(treeNode);
+    final widget = wrap(StoryOfYourFlexWidget(controller));
+    await pump(tester, widget);
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byWidget(widget),
+      matchesGoldenFile('goldens/story_of_row_layout.png'),
+    );
+  }, skip: true);
 
-    testWidgets('Golden test', (WidgetTester tester) async {
-      await setWindowSize(windowSize);
-      final widget = wrap(StoryOfYourFlexWidget(
-          FlexLayoutProperties.fromRemoteDiagnosticsNode(node)));
-      await tester.pumpWidget(widget);
-      await expectLater(
-        find.byWidget(widget),
-        matchesGoldenFile('goldens/story_of_row_layout.png'),
-      );
-    }, skip: kIsWeb || !isLinux);
-  });
-
-  group('Column', () {
+  testWidgetsWithWindowSize('Column golden test', windowSize,
+      (WidgetTester tester) async {
     final columnWidgetJsonNode = buildDiagnosticsNodeJson(Axis.vertical);
-    final node = RemoteDiagnosticsNode(columnWidgetJsonNode, null, false, null);
-    testWidgets('Golden test', (WidgetTester tester) async {
-      await setWindowSize(windowSize);
-      final widget = wrap(StoryOfYourFlexWidget(
-          FlexLayoutProperties.fromRemoteDiagnosticsNode(node)));
-      await tester.pumpWidget(widget);
-      await expectLater(
-        find.byWidget(widget),
-        matchesGoldenFile('goldens/story_of_column_layout.png'),
-      );
-    }, skip: kIsWeb || !isLinux);
-  });
-
-  test('sum', () {
-    expect(sum([1.0, 2.0, 3.0]), 6.0);
-  });
-
-  group('computeRenderSizes', () {
-    test(
-        'scale sizes so the largestSize maps to largestRenderSize with forceToOccupyMaxSize=false',
-        () {
-      final renderSizes = computeRenderSizes(
-        sizes: [100.0, 200.0, 300.0],
-        smallestSize: 100.0,
-        largestSize: 300.0,
-        smallestRenderSize: 200.0,
-        largestRenderSize: 600.0,
-        maxSizeAvailable: 2000,
-        forceToOccupyMaxSizeAvailable: false,
-      );
-      expect(renderSizes, [200.0, 400.0, 600.0]);
-      expect(sum(renderSizes), lessThan(2000));
-    });
-
-    test(
-        'scale sizes so the items fit maxSizeAvailable with forceToOccupyMaxSize=true',
-        () {
-      final renderSizes = computeRenderSizes(
-        sizes: [100.0, 200.0, 300.0],
-        smallestSize: 100.0,
-        largestSize: 300.0,
-        smallestRenderSize: 200.0,
-        largestRenderSize: 600.0,
-        maxSizeAvailable: 2000,
-        forceToOccupyMaxSizeAvailable: true,
-      );
-      expect(renderSizes, [200.0, 666.6666666666667, 1133.3333333333335]);
-      expect(sum(renderSizes) - 2000.0, lessThan(0.01));
-    });
-
-    test(
-        'scale sizes when the items exceeds maxSizeAvailable with forceToOccupyMaxSize=true should not change any behavior',
-        () {
-      final renderSizes = computeRenderSizes(
-        sizes: [100.0, 200.0, 300.0],
-        smallestSize: 100.0,
-        largestSize: 300.0,
-        smallestRenderSize: 300.0,
-        largestRenderSize: 900.0,
-        maxSizeAvailable: 250.0,
-        forceToOccupyMaxSizeAvailable: true,
-      );
-      expect(renderSizes, [300.0, 600.0, 900.0]);
-      expect(sum(renderSizes), greaterThan(250.0));
-    });
-  });
+    final diagnostic =
+        RemoteDiagnosticsNode(columnWidgetJsonNode, null, false, null);
+    final treeNode = InspectorTreeNode()..diagnostic = diagnostic;
+    final controller = TestInspectorController()..setSelectedNode(treeNode);
+    final widget = wrap(StoryOfYourFlexWidget(controller));
+    await pump(tester, widget);
+    await expectLater(
+      find.byWidget(widget),
+      matchesGoldenFile('goldens/story_of_column_layout.png'),
+    );
+  }, skip: true);
 }

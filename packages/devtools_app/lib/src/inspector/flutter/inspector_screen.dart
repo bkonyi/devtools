@@ -3,12 +3,12 @@
 // found in the LICENSE file.
 
 import 'package:flutter/material.dart';
-import 'package:flutter_icons/flutter_icons.dart';
 import 'package:vm_service/vm_service.dart' hide Stack;
 
 import '../../flutter/auto_dispose_mixin.dart';
 import '../../flutter/blocking_action_mixin.dart';
 import '../../flutter/initializer.dart';
+import '../../flutter/octicons.dart';
 import '../../flutter/screen.dart';
 import '../../flutter/split.dart';
 import '../../globals.dart';
@@ -22,15 +22,15 @@ import 'inspector_screen_details_tab.dart';
 import 'inspector_tree_flutter.dart';
 
 class InspectorScreen extends Screen {
-  const InspectorScreen() : super('Info');
+  const InspectorScreen();
 
   @override
   Widget build(BuildContext context) => const InspectorScreenBody();
 
   @override
   Widget buildTab(BuildContext context) {
-    return Tab(
-      icon: Icon(Octicons.getIconData('device-mobile')),
+    return const Tab(
+      icon: Icon(Octicons.deviceMobile),
       text: 'Flutter Inspector',
     );
   }
@@ -46,6 +46,7 @@ class InspectorScreenBody extends StatefulWidget {
 class _InspectorScreenBodyState extends State<InspectorScreenBody>
     with BlockingActionMixin, AutoDisposeMixin {
   bool _expandCollapseSupported = false;
+  bool _layoutExplorerSupported = false;
   bool connectionInProgress = false;
   InspectorService inspectorService;
 
@@ -97,7 +98,7 @@ class _InspectorScreenBodyState extends State<InspectorScreenBody>
       controller: detailsTreeController,
       isSummaryTree: false,
     );
-    final splitAxis = Split.axisFor(context, 1.0);
+    final splitAxis = Split.axisFor(context, 1.3);
     return Column(
       children: <Widget>[
         Row(
@@ -145,12 +146,13 @@ class _InspectorScreenBodyState extends State<InspectorScreenBody>
         Expanded(
           child: Split(
             axis: splitAxis,
-            initialFirstFraction: splitAxis == Axis.horizontal ? 0.35 : 0.6,
+            initialFirstFraction: 0.35,
             firstChild: summaryTree,
             secondChild: InspectorDetailsTabController(
               detailsTree: detailsTree,
               controller: inspectorController,
               actionButtons: _expandCollapseButtons(),
+              layoutExplorerSupported: _layoutExplorerSupported,
             ),
           ),
         ),
@@ -203,6 +205,12 @@ class _InspectorScreenBodyState extends State<InspectorScreenBody>
     });
   }
 
+  void _onLayoutExplorerSupported() {
+    setState(() {
+      _layoutExplorerSupported = true;
+    });
+  }
+
   void _handleConnectionStart(VmService service) async {
     setState(() {
       connectionInProgress = true;
@@ -233,6 +241,7 @@ class _InspectorScreenBodyState extends State<InspectorScreenBody>
         inspectorService: inspectorService,
         treeType: FlutterTreeType.widget,
         onExpandCollapseSupported: _onExpandCollapseSupported,
+        onLayoutExplorerSupported: _onLayoutExplorerSupported,
       );
 
       // TODO(jacobr): move this notice display to once a day.

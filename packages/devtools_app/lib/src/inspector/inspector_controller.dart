@@ -64,6 +64,7 @@ class InspectorController extends DisposableController
     this.parent,
     this.isSummaryTree = true,
     this.onExpandCollapseSupported,
+    this.onLayoutExplorerSupported,
   })  : _treeGroups = InspectorObjectGroupManager(inspectorService, 'tree'),
         _selectionGroups =
             InspectorObjectGroupManager(inspectorService, 'selection') {
@@ -98,6 +99,7 @@ class InspectorController extends DisposableController
     });
 
     _checkForExpandCollapseSupport();
+    _checkForLayoutDetailsSupport();
 
     // This logic only needs to be run once so run it in the outermost
     // controller.
@@ -140,13 +142,13 @@ class InspectorController extends DisposableController
   // TODO(albertusangga): Remove this flag if required CL to Flutter is landed
   static bool enableExperimentalStoryOfLayout = false;
 
-  final List<Function> _selectionListeners = [];
+  final List<VoidCallback> _selectionListeners = [];
 
-  void addSelectionListener(Function listener) {
+  void addSelectionListener(VoidCallback listener) {
     _selectionListeners.add(listener);
   }
 
-  void removeSelectionListener(Function listener) {
+  void removeSelectionListener(VoidCallback listener) {
     _selectionListeners.remove(listener);
   }
 
@@ -173,7 +175,9 @@ class InspectorController extends DisposableController
 
   final bool isSummaryTree;
 
-  final VoidFunction onExpandCollapseSupported;
+  final VoidCallback onExpandCollapseSupported;
+
+  final VoidCallback onLayoutExplorerSupported;
 
   /// Parent InspectorController if this is a details subtree.
   InspectorController parent;
@@ -205,6 +209,7 @@ class InspectorController extends DisposableController
 
   /// Node being highlighted due to the current hover.
   InspectorTreeNode get currentShowNode => inspectorTree.hover;
+
   set currentShowNode(InspectorTreeNode node) => inspectorTree.hover = node;
 
   bool flutterAppFrameReady = false;
@@ -846,25 +851,41 @@ class InspectorController extends DisposableController
     details.animateTo(details.inspectorTree.selection);
   }
 
+  /// execute given [callback] when minimum Flutter [version] is met.
+  void _onVersionSupported(
+    SemanticVersion version,
+    VoidCallback callback,
+  ) {
+    final flutterVersionServiceListenable = serviceManager
+        .registeredServiceListenable(registrations.flutterVersion.service);
+    addAutoDisposeListener(flutterVersionServiceListenable, () async {
+      final registered = flutterVersionServiceListenable.value;
+      if (registered) {
+        final flutterVersion = FlutterVersion.parse(
+            (await serviceManager.getFlutterVersion()).json);
+        if (flutterVersion.isSupported(supportedVersion: version)) {
+          callback();
+        }
+      }
+    });
+  }
+
   void _checkForExpandCollapseSupport() {
     if (onExpandCollapseSupported == null) return;
+    // Configurable subtree depth is available in versions of Flutter
+    // greater than or equal to 1.9.7, but the flutterVersion service is
+    // not available until 1.10.1, so we will check for 1.10.1 here.
+    _onVersionSupported(
+      SemanticVersion(major: 1, minor: 10, patch: 1),
+      onExpandCollapseSupported,
+    );
+  }
 
-    serviceManager.hasRegisteredService(
-      registrations.flutterVersion.service,
-      (serviceAvailable) async {
-        if (serviceAvailable) {
-          final flutterVersion = FlutterVersion.parse(
-              (await serviceManager.getFlutterVersion()).json);
-          // Configurable subtree depth is available in versions of Flutter
-          // greater than or equal to 1.9.7, but the flutterVersion service is
-          // not available until 1.10.1, so we will check for 1.10.1 here.
-          if (flutterVersion.isSupported(
-              supportedVersion:
-                  SemanticVersion(major: 1, minor: 10, patch: 1))) {
-            onExpandCollapseSupported();
-          }
-        }
-      },
+  void _checkForLayoutDetailsSupport() {
+    if (onLayoutExplorerSupported == null) return;
+    _onVersionSupported(
+      SemanticVersion(major: 1, minor: 12, patch: 16),
+      onLayoutExplorerSupported,
     );
   }
 }

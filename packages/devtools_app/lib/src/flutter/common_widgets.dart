@@ -3,9 +3,11 @@
 // found in the LICENSE file.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_widgets/flutter_widgets.dart';
 
 import '../framework/framework_core.dart';
+import '../ui/flutter/label.dart';
 
 const tooltipWait = Duration(milliseconds: 500);
 
@@ -141,8 +143,125 @@ TextStyle primaryColorLight(TextStyle style, BuildContext context) {
 /// Builds an [ErrorReporter] for a context that shows a [SnackBar].
 ErrorReporter showErrorSnackBar(BuildContext context) {
   return (String title, dynamic error) {
-    Scaffold.of(context).showSnackBar(SnackBar(
-      content: Text(title),
-    ));
+    // TODO: This is a workaround - need to fix
+    // https://github.com/flutter/devtools/issues/1369.
+    SchedulerBinding.instance.scheduleTask(
+      () => Scaffold.of(context).showSnackBar(
+        SnackBar(
+          content: Text(title),
+        ),
+      ),
+      Priority.idle,
+    );
   };
+}
+
+/// Button to clear data in the UI.
+///
+/// * `minIncludeTextWidth`: The minimum width the button can be before the text
+///    is omitted.
+/// * `onPressed`: The callback to be called upon pressing the button.
+StatelessWidget clearButton({
+  Key key,
+  double minIncludeTextWidth,
+  @required VoidCallback onPressed,
+}) {
+  return OutlineButton(
+    key: key,
+    onPressed: onPressed,
+    child: MaterialIconLabel(
+      Icons.block,
+      'Clear',
+      minIncludeTextWidth: minIncludeTextWidth,
+    ),
+  );
+}
+
+/// Button to start recording data.
+///
+/// * `recording`: Whether recording is in progress.
+/// * `minIncludeTextWidth`: The minimum width the button can be before the text
+///    is omitted.
+/// * `onPressed`: The callback to be called upon pressing the button.
+StatelessWidget recordButton({
+  Key key,
+  @required bool recording,
+  double minIncludeTextWidth,
+  @required VoidCallback onPressed,
+}) {
+  return OutlineButton(
+    key: key,
+    onPressed: recording ? null : onPressed,
+    child: MaterialIconLabel(
+      Icons.fiber_manual_record,
+      'Record',
+      minIncludeTextWidth: minIncludeTextWidth,
+    ),
+  );
+}
+
+/// Button to stop recording data.
+///
+/// * `recording`: Whether recording is in progress.
+/// * `minIncludeTextWidth`: The minimum width the button can be before the text
+///    is omitted.
+/// * `onPressed`: The callback to be called upon pressing the button.
+StatelessWidget stopRecordingButton({
+  Key key,
+  @required bool recording,
+  double minIncludeTextWidth,
+  @required VoidCallback onPressed,
+}) {
+  return OutlineButton(
+    key: key,
+    onPressed: !recording ? null : onPressed,
+    child: MaterialIconLabel(
+      Icons.stop,
+      'Stop',
+      minIncludeTextWidth: minIncludeTextWidth,
+    ),
+  );
+}
+
+Widget recordingInfo({
+  Key instructionsKey,
+  Key statusKey,
+  @required bool recording,
+  @required String recordedObject,
+}) {
+  final recordingInstructions = Column(
+    key: instructionsKey,
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: [
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text('Click the record button '),
+          const Icon(Icons.fiber_manual_record),
+          Text(' to start recording $recordedObject.')
+        ],
+      ),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: const [
+          Text('Click the stop button '),
+          Icon(Icons.stop),
+          Text(' to end the recording.')
+        ],
+      ),
+    ],
+  );
+  final recordingStatus = Column(
+    key: statusKey,
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: [
+      Text('Recording $recordedObject'),
+      const SizedBox(height: 16.0),
+      const CircularProgressIndicator(),
+    ],
+  );
+
+  return Center(
+    child: recording ? recordingStatus : recordingInstructions,
+  );
 }

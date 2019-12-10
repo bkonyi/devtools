@@ -32,7 +32,7 @@ class CpuProfileData {
       stackTraceEvents:
           (json[traceEventsKey] ?? []).cast<Map<String, dynamic>>(),
       profileMetaData: CpuProfileMetaData(
-        sampleCount: json[sampleCountKey],
+        sampleCount: json[sampleCountKey] ?? 0,
         samplePeriod: json[samplePeriodKey],
         stackDepth: json[stackDepthKey],
         time: (json[timeOriginKey] != null && json[timeExtentKey] != null)
@@ -87,6 +87,8 @@ class CpuProfileData {
     );
   }
 
+  static CpuProfileData empty() => parse({});
+
   // Key fields from the VM response JSON.
   static const nameKey = 'name';
   static const categoryKey = 'category';
@@ -121,6 +123,8 @@ class CpuProfileData {
 
   Map<String, CpuStackFrame> stackFrames = {};
 
+  CpuStackFrame selectedStackFrame;
+
   Map<String, dynamic> get json => {
         'type': '_CpuProfileTimeline',
         samplePeriodKey: profileMetaData.samplePeriod,
@@ -131,6 +135,8 @@ class CpuProfileData {
         stackFramesKey: stackFramesJson,
         traceEventsKey: stackTraceEvents,
       };
+
+  bool get isEmpty => profileMetaData.sampleCount == 0;
 }
 
 class CpuProfileMetaData {

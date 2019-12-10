@@ -12,6 +12,7 @@ import 'package:devtools_app/src/inspector/flutter/inspector_screen_details_tab.
 import 'package:devtools_app/src/inspector/flutter/story_of_your_layout/flex.dart';
 import 'package:devtools_app/src/inspector/flutter/summary_tree_debug_layout.dart';
 import 'package:devtools_app/src/inspector/inspector_controller.dart';
+import 'package:devtools_app/src/inspector/inspector_service.dart';
 import 'package:devtools_app/src/inspector/inspector_tree.dart';
 import 'package:devtools_app/src/service_extensions.dart' as extensions;
 import 'package:devtools_app/src/service_manager.dart';
@@ -26,6 +27,8 @@ void main() {
   InspectorScreen screen;
   FakeServiceManager fakeServiceManager;
   FakeServiceExtensionManager fakeExtensionManager;
+  const windowSize = Size(2600.0, 1200.0);
+
   group('Inspector Screen', () {
     setUp(() {
       fakeServiceManager = FakeServiceManager();
@@ -70,9 +73,10 @@ void main() {
       expect(find.text('Flutter Inspector'), findsOneWidget);
     });
 
-    testWidgets('builds with no data', (WidgetTester tester) async {
+    testWidgetsWithWindowSize('builds with no data', windowSize,
+        (WidgetTester tester) async {
       // Make sure the window is wide enough to display description text.
-      await setWindowSize(const Size(2600.0, 1200.0));
+
       await tester.pumpWidget(wrap(Builder(builder: screen.build)));
       expect(find.byType(InspectorScreenBody), findsOneWidget);
       expect(find.text('Refresh Tree'), findsOneWidget);
@@ -85,9 +89,9 @@ void main() {
       // expect(find.text(extensions.debugPaint.description), findsOneWidget);
     });
 
-    testWidgets('Test toggling service extension buttons',
+    testWidgetsWithWindowSize(
+        'Test toggling service extension buttons', windowSize,
         (WidgetTester tester) async {
-      await setWindowSize(const Size(2600.0, 1200.0));
       mockExtensions();
       expect(
         fakeExtensionManager
@@ -146,10 +150,9 @@ void main() {
       );
     });
 
-    testWidgets(
+    testWidgetsWithWindowSize(
         'Test toggling service extension buttons with no extensions available',
-        (WidgetTester tester) async {
-      await setWindowSize(const Size(2600.0, 1200.0));
+        windowSize, (WidgetTester tester) async {
       mockNoExtensionsAvailable();
       expect(
         fakeExtensionManager
@@ -190,19 +193,18 @@ void main() {
     });
 
     group('test render depends on enableExperimentalStoryOfLayout value', () {
-      testWidgets('Should not render toggle button when flag is disabled',
+      testWidgetsWithWindowSize(
+          'Should not render toggle button when flag is disabled', windowSize,
           (WidgetTester tester) async {
         InspectorController.enableExperimentalStoryOfLayout = false;
-        await setWindowSize(const Size(2600.0, 1200.0));
         await tester.pumpWidget(wrap(Builder(builder: screen.build)));
         expect(find.text('Show Constraints'), findsNothing);
       });
 
-      testWidgets(
+      testWidgetsWithWindowSize(
           'Should render button with full text when flag is enabled and screen is wide enough',
-          (WidgetTester tester) async {
+          windowSize, (WidgetTester tester) async {
         InspectorController.enableExperimentalStoryOfLayout = true;
-        await setWindowSize(const Size(2600.0, 1200.0));
         await tester.pumpWidget(wrap(Builder(builder: screen.build)));
         expect(find.text('Show Constraints'), findsWidgets);
       });
@@ -215,22 +217,21 @@ void main() {
       final jsonNode = <String, Object>{
         'constraints': <String, Object>{
           'type': 'BoxConstraints',
-          'hasBoundedWidth': true,
-          'hasBoundedHeight': false,
-          'minWidth': 0.0,
-          'maxWidth': 100.0,
-          'minHeight': 0.0,
+          'minWidth': '0.0',
+          'maxWidth': '100.0',
+          'minHeight': '0.0',
+          'maxHeight': 'Infinity',
         },
       };
       final animationController = AnimationController(
         vsync: const TestVSync(),
         duration: const Duration(milliseconds: 1),
       );
-      final node = RemoteDiagnosticsNode(jsonNode, null, false, null);
+      final diagnostic = RemoteDiagnosticsNode(jsonNode, null, false, null);
       await tester.pumpWidget(
         MaterialApp(
           home: ConstraintsDescription(
-            properties: LayoutProperties(node),
+            properties: LayoutProperties(diagnostic),
             listenable: animationController,
           ),
         ),
@@ -251,7 +252,7 @@ void main() {
       animationController.dispose();
     });
 
-    testWidgets('Test render LayoutDetailsTab', (WidgetTester tester) async {
+    group('LayoutDetailsTab', () {
       final renderObjectJson = jsonDecode('''
         {
           "properties": [
@@ -284,7 +285,7 @@ void main() {
       ''');
       final diagnostic = RemoteDiagnosticsNode(
         <String, Object>{
-          'isFlex': true,
+          'widgetRuntimeType': 'Row',
           'renderObject': renderObjectJson,
           'hasChildren': false,
           'children': [],
@@ -294,18 +295,40 @@ void main() {
         null,
       );
       final treeNode = InspectorTreeNode()..diagnostic = diagnostic;
-      final controller = MockInspectorController();
-      when(controller.selectedNode).thenReturn(treeNode);
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: LayoutDetailsTab(
-              controller: controller,
+      testWidgetsWithWindowSize(
+          'should render StoryOfYourFlexWidget', windowSize,
+          (WidgetTester tester) async {
+        final controller = TestInspectorController()..setSelectedNode(treeNode);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: LayoutExplorerTab(
+                controller: controller,
+              ),
             ),
           ),
-        ),
-      );
-      expect(find.byType(StoryOfYourFlexWidget), findsOneWidget);
+        );
+        expect(find.byType(StoryOfYourFlexWidget), findsOneWidget);
+      });
+
+      testWidgetsWithWindowSize(
+          'should listen to controller selection event', windowSize,
+          (WidgetTester tester) async {
+        final controller = TestInspectorController();
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: LayoutExplorerTab(
+                controller: controller,
+              ),
+            ),
+          ),
+        );
+        expect(find.byType(StoryOfYourFlexWidget), findsNothing);
+        controller.setSelectedNode(treeNode);
+        await tester.pumpAndSettle();
+        expect(find.byType(StoryOfYourFlexWidget), findsOneWidget);
+      });
     });
 
     // TODO(jacobr): add screenshot tests that connect to a test application
@@ -315,4 +338,42 @@ void main() {
   });
 }
 
-class MockInspectorController extends Mock implements InspectorController {}
+class MockInspectorService extends Mock implements InspectorService {}
+
+class MockInspectorTreeController extends Mock
+    implements InspectorTreeController {}
+
+class TestInspectorController extends Fake implements InspectorController {
+  InspectorService service = MockInspectorService();
+  InspectorTreeNode node;
+  List<Function> listeners = [];
+
+  @override
+  InspectorTreeNode get selectedNode => node;
+  @override
+  set selectedNode(InspectorTreeNode newNode) => node = newNode;
+
+  @override
+  void addSelectionListener(Function listener) {
+    listeners.add(listener);
+  }
+
+  @override
+  void notifySelectionListeners() {
+    for (var listener in listeners) listener();
+  }
+
+  @override
+  void removeSelectionListener(Function listener) {
+    listeners.remove(listener);
+  }
+
+  @override
+  void setSelectedNode(InspectorTreeNode newSelection) {
+    selectedNode = newSelection;
+    notifySelectionListeners();
+  }
+
+  @override
+  InspectorService get inspectorService => service;
+}

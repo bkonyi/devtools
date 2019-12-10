@@ -65,7 +65,7 @@ void main() {
     });
 
     test('displayDepth', () {
-      timelineData.selectedFrame = testFrame;
+      timelineData.selectedFrame = testFrame0;
       expect(timelineData.selectedFrame.uiEventFlow.depth, equals(7));
       expect(timelineData.selectedFrame.gpuEventFlow.depth, equals(2));
       expect(timelineData.displayDepth, equals(9));
@@ -74,9 +74,9 @@ void main() {
     test('clear', () async {
       timelineData = FrameBasedTimelineData(displayRefreshRate: 120)
         ..traceEvents.add({'test': 'trace event'})
-        ..frames.add(testFrame)
+        ..frames.add(testFrame0)
         ..selectedEvent = vsyncEvent
-        ..selectedFrame = testFrame
+        ..selectedFrame = testFrame0
         ..cpuProfileData = CpuProfileData.parse(jsonDecode(jsonEncode({})));
       expect(timelineData.traceEvents, isNotEmpty);
       expect(timelineData.frames, isNotEmpty);
@@ -116,31 +116,32 @@ void main() {
     });
 
     test('initializeEventBuckets', () {
-      expect(timelineData.eventBuckets, isEmpty);
-      timelineData.initializeEventBuckets();
+      expect(timelineData.eventGroups, isEmpty);
+      timelineData.initializeEventGroups();
       expect(
-        timelineData.eventBuckets[FullTimelineData.uiKey].length,
+        timelineData.eventGroups[FullTimelineData.uiKey].eventsByRow[0].length,
         equals(1),
       );
       expect(
-        timelineData.eventBuckets[FullTimelineData.gpuKey].length,
+        timelineData.eventGroups[FullTimelineData.gpuKey].eventsByRow[0].length,
         equals(1),
       );
       expect(
-        timelineData.eventBuckets[FullTimelineData.unknownKey].length,
+        timelineData
+            .eventGroups[FullTimelineData.unknownKey].eventsByRow[0].length,
         equals(1),
       );
-      expect(timelineData.eventBuckets['A'].length, equals(1));
+      expect(timelineData.eventGroups['A'].eventsByRow[0].length, equals(1));
     });
 
     test('event bucket compare', () {
-      expect(FullTimelineData.eventBucketComparator('UI', 'GPU'), equals(-1));
-      expect(FullTimelineData.eventBucketComparator('GPU', 'UI'), equals(1));
-      expect(FullTimelineData.eventBucketComparator('UI', 'UI'), equals(0));
-      expect(FullTimelineData.eventBucketComparator('UI', 'Async'), equals(1));
-      expect(FullTimelineData.eventBucketComparator('A', 'B'), equals(-1));
+      expect(FullTimelineData.eventGroupComparator('UI', 'GPU'), equals(-1));
+      expect(FullTimelineData.eventGroupComparator('GPU', 'UI'), equals(1));
+      expect(FullTimelineData.eventGroupComparator('UI', 'UI'), equals(0));
+      expect(FullTimelineData.eventGroupComparator('UI', 'Async'), equals(1));
+      expect(FullTimelineData.eventGroupComparator('A', 'B'), equals(-1));
       expect(
-        FullTimelineData.eventBucketComparator('Z', 'Unknown'),
+        FullTimelineData.eventGroupComparator('Z', 'Unknown'),
         equals(-1),
       );
     });

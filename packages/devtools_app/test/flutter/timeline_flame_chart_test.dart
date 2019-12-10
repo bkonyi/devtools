@@ -26,34 +26,39 @@ void main() {
           .thenAnswer((_) => Future.value(false));
     });
 
-    testWidgets('builds frame based timeline', (WidgetTester tester) async {
+    testWidgetsWithWindowSize(
+        'builds frame based timeline', const Size(1599.0, 1000.0),
+        (WidgetTester tester) async {
       // Set a wide enough screen width that we do not run into overflow.
-      await setWindowSize(const Size(1599.0, 1000.0));
 
       final mockData = MockFrameBasedTimelineData();
       when(mockData.displayDepth).thenReturn(8);
-      when(mockData.selectedFrame).thenReturn(testFrame);
+      when(mockData.selectedFrame).thenReturn(testFrame0);
       final controllerWithData = TimelineController()
-        ..frameBasedTimeline.data = mockData;
-      await tester.pumpWidget(wrapWithProvidedController(
+        ..frameBasedTimeline.data = mockData
+        ..frameBasedTimeline.selectFrame(testFrame1);
+      await tester.pumpWidget(wrapWithControllers(
         TimelineScreenBody(),
         timelineController: controllerWithData,
       ));
       expect(find.byType(FrameBasedTimelineFlameChart), findsOneWidget);
-      expect(find.text('TODO Full Timeline Flame Chart'), findsNothing);
+      expect(find.byKey(TimelineScreen.recordingInstructionsKey), findsNothing);
     });
 
-    testWidgets('builds full timeline', (WidgetTester tester) async {
+    testWidgetsWithWindowSize(
+        'builds full timeline', const Size(1599.0, 1000.0),
+        (WidgetTester tester) async {
       // Set a wide enough screen width that we do not run into overflow.
-      await setWindowSize(const Size(1599.0, 1000.0));
-
-      await tester.pumpWidget(wrapWithProvidedController(
+      await tester.pumpWidget(wrapWithControllers(
         TimelineScreenBody(),
         timelineController: TimelineController()
-          ..timelineMode = TimelineMode.full,
+          ..selectTimelineMode(TimelineMode.full),
       ));
       expect(find.byType(FrameBasedTimelineFlameChart), findsNothing);
-      expect(find.text('TODO Full Timeline Flame Chart'), findsOneWidget);
+      expect(
+        find.byKey(TimelineScreen.recordingInstructionsKey),
+        findsOneWidget,
+      );
     });
   });
 }

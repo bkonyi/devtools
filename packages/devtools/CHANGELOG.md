@@ -1,3 +1,13 @@
+## 0.1.12 - 2019-12-06
+* Enable testing the alpha version of DevTools written in Flutter. Click the "beaker" icon in the upper-right to launch DevTools in Flutter.
+* Fix a regression that showed an inaccurate error on the connect screen.
+* Fix bug causing async events with the same name to overlap each other in the Timeline.
+* Include previously omitted args in Timeline event summary.
+* Include "connected events" in the Timeline event summary, which are created via the dart:developer TimelineTask api.
+* Reset debugger search bar on hot reload.
+* Check for a debug service extension instead of using eval to distinguish between debug and profile builds.
+* Depend on the latest `package:sse`.
+
 ## 0.1.11 - 2019-11-08
 * Add full timeline mode with support for async and recorded tracing.
 * Add event summary section that shows metadata for non-ui events on the Timeline page.
