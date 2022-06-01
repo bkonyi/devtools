@@ -10,6 +10,8 @@ import 'package:dds_service_extensions/dds_service_extensions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:vm_service/vm_service.dart';
 
+import '../screens/network/json_to_service_cache.dart';
+
 class VmServiceWrapper implements VmService {
   VmServiceWrapper(
     this._vmService,
@@ -49,6 +51,10 @@ class VmServiceWrapper implements VmService {
     ..complete(true);
 
   Future<void> get allFuturesCompleted => _allFuturesCompleter.future;
+
+  // A local cache of "fake" service objects. Used to convert JSON objects to
+  // VM service response formats to be used with APIs that require them.
+  final fakeServiceCache = JsonToServiceCache();
 
   /// Executes `callback` for each isolate, and waiting for all callbacks to
   /// finish before completing.
@@ -262,6 +268,14 @@ class VmServiceWrapper implements VmService {
     int? offset,
     int? count,
   }) {
+    final cachedObj = fakeServiceCache.getObject(
+      objectId: objectId,
+      offset: offset,
+      count: count,
+    );
+    if (cachedObj != null) {
+      return Future.value(cachedObj);
+    }
     return trackFuture(
       'getObject',
       _vmService.getObject(

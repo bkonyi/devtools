@@ -2,16 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as image;
+import 'package:provider/provider.dart';
+import 'package:vm_service/vm_service.dart';
 
+import '../../../devtools_app.dart';
 import '../../http/http.dart';
 import '../../http/http_request_data.dart';
 import '../../primitives/utils.dart';
 import '../../shared/common_widgets.dart';
+import '../../shared/object_tree.dart';
 import '../../shared/table.dart';
 import '../../shared/theme.dart';
 import '../../ui/colors.dart';
+import '../debugger/debugger_controller.dart';
+import '../debugger/debugger_model.dart';
+import '../debugger/variables.dart';
 import 'network_model.dart';
 
 // Approximately double the indent of the expandable tile's title.
@@ -157,10 +166,43 @@ class HttpRequestView extends StatelessWidget {
   }
 }
 
-class HttpResponseView extends StatelessWidget {
-  const HttpResponseView(this.data);
+class HttpResponseView extends StatefulWidget {
+  HttpResponseView(this.data);
 
   final DartIOHttpRequestData data;
+
+  @override
+  State<HttpResponseView> createState() => _HttpResponseViewState();
+}
+
+class _HttpResponseViewState extends State<HttpResponseView> {
+  late Future<void> _initializeTree;
+  late DartObjectNode variable;
+
+  @override
+  void initState() {
+    super.initState();
+    final contentType = widget.data.contentType;
+    if (contentType != null &&
+        contentType.contains('json') &&
+        widget.data.responseBody!.isNotEmpty) {
+      final responseJson = json.decode(widget.data.responseBody!);
+      final root = serviceManager.service!.fakeServiceCache
+          .insertJsonObject(responseJson);
+      variable = DartObjectNode.fromValue(
+        name: '[root]',
+        value: root,
+        artificialName: true,
+        isolateRef: IsolateRef(
+          id: 'fake-isolate',
+          number: 'fake-isolate',
+          name: 'local-cache',
+          isSystemIsolate: true,
+        ),
+      );
+      _initializeTree = buildVariablesTree(variable);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -168,13 +210,26 @@ class HttpResponseView extends StatelessWidget {
     // We shouldn't try and display an image response view when using the
     // timeline profiler since it's possible for response body data to get
     // dropped.
-    final contentType = data.contentType;
+    final contentType = widget.data.contentType;
     if (contentType != null && contentType.contains('image')) {
-      child = ImageResponseView(data);
+      child = ImageResponseView(widget.data);
+    } else if (contentType != null &&
+        contentType.contains('json') &&
+        widget.data.responseBody!.isNotEmpty) {
+      child = FutureBuilder(
+          future: _initializeTree,
+          builder: (context, snapshot) {
+            print('Snapshot has data: ${snapshot.connectionState}');
+            if (snapshot.connectionState != ConnectionState.done)
+              return Container();
+            return ExpandableVariable(
+              variable: variable,
+              debuggerController: Provider.of<DebuggerController>(context),
+            );
+          });
     } else {
-      child = FormattedJson(
-        formattedString: data.responseBody,
-      );
+      // TODO(bkonyi): style
+      child = Text(widget.data.responseBody!);
     }
     // TODO(kenz): use a collapsible json tree for the response
     // https://github.com/flutter/devtools/issues/2952.

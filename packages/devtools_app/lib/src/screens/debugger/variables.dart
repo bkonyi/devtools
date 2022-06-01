@@ -8,19 +8,20 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide Stack;
 import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
+import 'package:vm_service/vm_service.dart';
 
 import '../../primitives/listenable.dart';
 import '../../primitives/utils.dart';
 import '../../shared/common_widgets.dart';
 import '../../shared/globals.dart';
 import '../../shared/notifications.dart';
+import '../../shared/object_tree.dart';
 import '../../shared/routing.dart';
 import '../../shared/theme.dart';
 import '../../shared/tree.dart';
 import '../inspector/diagnostics.dart';
 import '../inspector/inspector_screen.dart';
 import 'debugger_controller.dart';
-import 'debugger_model.dart';
 
 class Variables extends StatelessWidget {
   const Variables({Key? key}) : super(key: key);
@@ -75,7 +76,11 @@ class ExpandableVariable extends StatelessWidget {
   void onItemPressed(DartObjectNode v, DebuggerController controller) {
     // On expansion, lazily build the variables tree for performance reasons.
     if (v.isExpanded) {
-      v.children.forEach(buildVariablesTree);
+      print('${v.displayValue} ${v.children.length}');
+      for (int i = 0; i < v.children.length; ++i) {
+        final child = v.children[i];
+        buildVariablesTree(child);
+      }
     }
   }
 }
@@ -94,11 +99,12 @@ Widget displayProvider(
   // should also include the type of the value in the tooltip if the variable
   // is not null.
   if (variable.text != null) {
+    print('building: ${variable.text}');
     return SelectableText.rich(
       TextSpan(
         children: processAnsiTerminalCodes(
           variable.text,
-          theme.fixedFontStyle,
+          theme.subtleFixedFontStyle,
         ),
       ),
       onTap: onTap,
@@ -114,17 +120,48 @@ Widget displayProvider(
       debuggerController: controller,
     );
   }
+  TextStyle getStyle() {
+    final style = theme.subtleFixedFontStyle;
+    switch (variable.ref!.instanceRef!.kind) {
+      case InstanceKind.kString:
+        return style.apply(
+          color: theme.colorScheme.stringSyntaxColor,
+        );
+      case InstanceKind.kInt:
+        return style.apply(
+          color: theme.colorScheme.numericConstantSyntaxColor,
+        );
+      case InstanceKind.kBool:
+      case InstanceKind.kNull:
+        return style.apply(
+          color: theme.colorScheme.modifierSyntaxColor,
+        );
+      default:
+        return style;
+    }
+  }
+
+  final hasName = variable.name?.isNotEmpty ?? false;
   return DevToolsTooltip(
     message: variable.displayValue,
     waitDuration: tooltipWaitLong,
     child: SelectableText.rich(
       TextSpan(
-        text: variable.name?.isNotEmpty ?? false ? '${variable.name}: ' : null,
-        style: theme.fixedFontStyle,
+        text: hasName ? '${variable.name}' : null,
+        style: variable.artificialName
+            ? theme.subtleFixedFontStyle
+            : theme.fixedFontStyle.apply(
+                color: theme.colorScheme.controlFlowSyntaxColor,
+              ),
         children: [
+          if (hasName)
+            TextSpan(
+              text: ': ',
+              style: theme.fixedFontStyle,
+            ),
           TextSpan(
             text: variable.displayValue,
-            style: theme.subtleFixedFontStyle,
+            style: getStyle(),
           ),
         ],
       ),

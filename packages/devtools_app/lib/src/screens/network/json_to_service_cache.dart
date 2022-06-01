@@ -1,0 +1,196 @@
+import 'package:vm_service/vm_service.dart';
+
+class JsonToServiceCache {
+  final _cache = <String, Instance>{
+    _kTrue.id!: _kTrue,
+    _kFalse.id!: _kFalse,
+    _kNull.id!: _kNull,
+  };
+
+  int _idCount = 0;
+  String _nextId() => 'json-cache-${_idCount++}';
+
+  static final _kTrue = Instance(
+    kind: InstanceKind.kBool,
+    identityHashCode: -1,
+    classRef: ClassRef(
+      name: 'bool',
+      library: null,
+      id: 'json-cache-bool',
+    ),
+    valueAsString: 'true',
+    id: 'json-cache-true',
+  );
+
+  static final _kFalse = Instance(
+    kind: InstanceKind.kBool,
+    identityHashCode: -1,
+    classRef: ClassRef(
+      name: 'bool',
+      library: null,
+      id: 'json-cache-bool',
+    ),
+    valueAsString: 'false',
+    id: 'json-cache-false',
+  );
+
+  static final _kNull = Instance(
+    kind: InstanceKind.kNull,
+    identityHashCode: -1,
+    classRef: ClassRef(
+      name: 'Null',
+      library: null,
+      id: 'json-cache-null-cls',
+    ),
+    id: 'json-cache-null',
+  );
+
+  static final _kListClass = ClassRef(
+    name: 'List',
+    library: null,
+    id: 'json-cache-list-class',
+  );
+
+  static final _kMapClass = ClassRef(
+    name: 'Map',
+    library: null,
+    id: 'json-cache-map-class',
+  );
+
+  Instance? getObject({
+    required String objectId,
+    int? offset,
+    int? count,
+  }) {
+    final obj = _cache[objectId];
+    if (obj == null) return null;
+    if (offset != null && count != null) {
+      // TODO(bkonyi): consider caching responses for objects with offsets and
+      // counts.
+      if (obj.kind == InstanceKind.kList) {
+        final list = Instance(
+          kind: InstanceKind.kList,
+          identityHashCode: -1,
+          classRef: _kListClass,
+          id: _nextId(),
+          offset: offset,
+          count: count,
+          elements: obj.elements!.getRange(offset, offset + count).toList(),
+        );
+        return list;
+      } else if (obj.kind == InstanceKind.kMap) {
+        final map = Instance(
+          kind: InstanceKind.kMap,
+          identityHashCode: -1,
+          classRef: _kMapClass,
+          id: _nextId(),
+          offset: offset,
+          count: count,
+          associations:
+              obj.associations!.getRange(offset, offset + count).toList(),
+        );
+        return map;
+      }
+    }
+    return obj;
+  }
+
+  Instance insertJsonObject(dynamic json) {
+    if (json is List) {
+      return _insertList(json);
+    } else if (json is Map) {
+      return _insertMap(json.cast<String, dynamic>());
+    }
+    return _insertPrimitive(json);
+  }
+
+  Instance _insertMap(Map<String, dynamic> json) {
+    final map = Instance(
+      kind: InstanceKind.kMap,
+      identityHashCode: -1,
+      classRef: _kMapClass,
+      id: _nextId(),
+    );
+
+    map.associations = <MapAssociation>[
+      for (final entry in json.entries)
+        MapAssociation(
+          key: insertJsonObject(entry.key),
+          value: insertJsonObject(entry.value),
+        ),
+    ];
+    map.length = json.length;
+
+    _cache[map.id!] = map;
+    return map;
+  }
+
+  Instance _insertList(List<dynamic> json) {
+    final list = Instance(
+      kind: InstanceKind.kList,
+      identityHashCode: -1,
+      classRef: _kListClass,
+      id: _nextId(),
+    );
+    list.elements = <Instance>[
+      for (final e in json) insertJsonObject(e),
+    ];
+    list.length = json.length;
+    _cache[list.id!] = list;
+    return list;
+  }
+
+  Instance _insertPrimitive(dynamic json) {
+    assert(json == null ||
+        json is String ||
+        json is int ||
+        json is double ||
+        json is bool);
+    Instance instance;
+    if (json == null) {
+      instance = _kNull;
+    } else if (json is String) {
+      instance = Instance(
+        kind: InstanceKind.kString,
+        identityHashCode: -1,
+        classRef: ClassRef(
+          name: 'String',
+          library: null,
+          id: 'json-cache-string',
+        ),
+        id: _nextId(),
+        valueAsString: json,
+      );
+    } else if (json is int) {
+      instance = Instance(
+        kind: InstanceKind.kInt,
+        identityHashCode: json,
+        classRef: ClassRef(
+          name: 'int',
+          library: null,
+          id: 'json-cache-int',
+        ),
+        valueAsString: json.toString(),
+        id: _nextId(),
+      );
+    } else if (json is double) {
+      instance = Instance(
+        kind: InstanceKind.kDouble,
+        identityHashCode: -1,
+        classRef: ClassRef(
+          name: 'double',
+          library: null,
+          id: 'json-cache-double',
+        ),
+        valueAsString: json.toString(),
+        id: _nextId(),
+      );
+    } else if (json is bool) {
+      instance = json ? _kTrue : _kFalse;
+    } else {
+      throw '';
+    }
+    _cache[instance.id!] = instance;
+    return instance;
+  }
+}

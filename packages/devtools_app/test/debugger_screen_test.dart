@@ -15,6 +15,7 @@ import 'package:devtools_app/src/screens/debugger/controls.dart';
 import 'package:devtools_app/src/screens/debugger/debugger_model.dart';
 import 'package:devtools_app/src/screens/debugger/debugger_screen.dart';
 import 'package:devtools_app/src/screens/debugger/program_explorer_model.dart';
+import 'package:devtools_app/src/shared/object_tree.dart';
 import 'package:devtools_test/devtools_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
