@@ -10,6 +10,7 @@ import 'package:devtools_app_shared/utils.dart';
 import 'package:devtools_app_shared/web_utils.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:vm_service_protos/vm_service_protos.dart';
 import 'package:web/helpers.dart';
 
 import '../../../../../shared/analytics/analytics.dart' as ga;
@@ -43,15 +44,27 @@ class _PerfettoState extends State<Perfetto> with AutoDisposeMixin {
     _perfettoController = widget.perfettoController as PerfettoControllerImpl;
     _viewController = _PerfettoViewController(_perfettoController)..init();
 
-    // If [_perfettoController.activeTraceEvents] has a null value, the trace
-    // data has not yet been initialized.
-    if (_perfettoController.activeTraceEvents.value != null) {
-      _loadActiveTrace();
+    if (_perfettoController.timelineEventsController.usePerfettoFormat) {
+      // If [_perfettoController.activePerfettoTrace] has a null value, the trace
+      // data has not yet been initialized.
+      if (_perfettoController.activePerfettoTrace.value != null) {
+        _loadActiveTrace();
+      }
+      addAutoDisposeListener(
+        _perfettoController.activePerfettoTrace,
+        _loadActiveTrace,
+      );
+    } else {
+      // If [_perfettoController.activeTraceEvents] has a null value, the trace
+      // data has not yet been initialized.
+      if (_perfettoController.activeTraceEvents.value != null) {
+        _loadActiveTrace();
+      }
+      addAutoDisposeListener(
+        _perfettoController.activeTraceEvents,
+        _loadActiveTrace,
+      );
     }
-    addAutoDisposeListener(
-      _perfettoController.activeTraceEvents,
-      _loadActiveTrace,
-    );
 
     _scrollToActiveTimeRange();
     addAutoDisposeListener(
@@ -61,8 +74,13 @@ class _PerfettoState extends State<Perfetto> with AutoDisposeMixin {
   }
 
   void _loadActiveTrace() {
-    assert(_perfettoController.activeTraceEvents.value != null);
-    _viewController._loadTrace(_perfettoController.activeTraceEvents.value!);
+    if (_perfettoController.timelineEventsController.usePerfettoFormat) {
+      _viewController
+          ._loadPerfettoTrace(_perfettoController.activePerfettoTrace.value!);
+    } else {
+      assert(_perfettoController.activeTraceEvents.value != null);
+      _viewController._loadTrace(_perfettoController.activeTraceEvents.value!);
+    }
   }
 
   void _scrollToActiveTimeRange() {
@@ -158,7 +176,7 @@ class _PerfettoViewController extends DisposableController
     );
   }
 
-  void _loadTrace(List<TraceEventWrapper> devToolsTraceEvents) {
+  void _loadTrace(List<TraceEventWrapper> devToolsTraceEvents) async {
     final encodedJson = jsonEncode({
       'traceEvents': devToolsTraceEvents
           .map((eventWrapper) => eventWrapper.event.json)
@@ -170,6 +188,17 @@ class _PerfettoViewController extends DisposableController
     _postMessage({
       'perfetto': {
         'buffer': buffer,
+        'title': 'DevTools timeline trace',
+        'keepApiOpen': true,
+      },
+    });
+  }
+
+  void _loadPerfettoTrace(Trace timeline) {
+    ga.select(gac.performance, gac.PerformanceEvents.perfettoLoadTrace.name);
+    _postMessage({
+      'perfetto': {
+        'buffer': timeline.writeToBuffer(),
         'title': 'DevTools timeline trace',
         'keepApiOpen': true,
       },

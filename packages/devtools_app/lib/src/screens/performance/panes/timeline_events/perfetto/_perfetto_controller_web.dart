@@ -6,6 +6,8 @@ import 'dart:async';
 import 'dart:ui_web' as ui_web;
 
 import 'package:flutter/foundation.dart';
+import 'package:vm_service/vm_service.dart';
+import 'package:vm_service_protos/vm_service_protos.dart';
 import 'package:web/helpers.dart';
 
 import '../../../../../shared/globals.dart';
@@ -138,6 +140,9 @@ class PerfettoControllerImpl extends PerfettoController {
       _activeTraceEvents;
   final _activeTraceEvents = ValueNotifier<List<TraceEventWrapper>?>(null);
 
+  ValueListenable<Trace?> get activePerfettoTrace => _activePerfettoTrace;
+  final _activePerfettoTrace = ValueNotifier<Trace?>(null);
+
   /// The time range that should be scrolled to, or focused, in the Perfetto
   /// trace viewer.
   ValueListenable<TimeRange?> get activeScrollToTimeRange =>
@@ -210,6 +215,11 @@ class PerfettoControllerImpl extends PerfettoController {
     pendingTraceEventsToLoad = null;
     _activeTraceEvents.value = List.of(devToolsTraceEvents);
     await Future.delayed(_postTraceDelay);
+  }
+
+  @override
+  Future<void> loadPerfettoTrace(Trace devToolsTraceEvents) async {
+    _activePerfettoTrace.value = devToolsTraceEvents;
   }
 
   @override

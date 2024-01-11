@@ -3,13 +3,18 @@
 // found in the LICENSE file.
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:collection/collection.dart';
+import 'package:dds_service_extensions/dds_service_extensions.dart';
 import 'package:devtools_app_shared/utils.dart';
+import 'package:fixnum/fixnum.dart' as fixnum;
 import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
 import 'package:vm_service/vm_service.dart' as vm_service;
+import 'package:vm_service_protos/vm_service_protos.dart';
 
+import '../../../../service/vm_service_wrapper.dart';
 import '../../../../shared/analytics/analytics.dart' as ga;
 import '../../../../shared/analytics/constants.dart' as gac;
 import '../../../../shared/analytics/metrics.dart';
@@ -62,6 +67,9 @@ class TimelineEventsController extends PerformanceFeatureController
   ///
   /// This list is cleared and repopulated each time "Refresh" is clicked.
   final allTraceEvents = <TraceEventWrapper>[];
+  final allPerfettoTraceEvents = <PerfettoTraceEventWrapper>[];
+
+  Trace? perfettoTimeline;
 
   /// Set of thread_name trace events.
   ///
@@ -72,10 +80,13 @@ class TimelineEventsController extends PerformanceFeatureController
   /// Maps thread names, which are gathererd from the "thread_name" trace
   /// events, to their thread ids.
   final threadNamesById = <int, String>{};
+  final threadNameEventsByTrackId = <fixnum.Int64, ThreadNameEvent>{};
 
   /// Whether we should be using the legacy trace viewer or the new Perfetto
   /// trace viewer.
   final useLegacyTraceViewer = ValueNotifier<bool>(!kIsWeb);
+
+  final bool usePerfettoFormat = true && kIsWeb;
 
   /// Whether the recorded timeline data is currently being processed.
   ValueListenable<EventsControllerStatus> get status => _status;
@@ -164,11 +175,32 @@ class TimelineEventsController extends PerformanceFeatureController
         '[$_nextPollStartMicros - ${currentVmTime.timestamp}]',
       ),
     );
+
+    if (usePerfettoFormat) {
+      await _pullTraceEventsFromVmTimelinePerfettoImpl(
+        service,
+        currentVmTime,
+        isInitialPull,
+      );
+    } else {
+      await _pullTraceEventsFromVmTimelineLegacyImpl(
+        service,
+        currentVmTime,
+        isInitialPull,
+      );
+    }
+  }
+
+  Future<void> _pullTraceEventsFromVmTimelineLegacyImpl(
+    VmServiceWrapper service,
+    vm_service.Timestamp currentVmTime,
+    bool isInitialPull,
+  ) async {
+    assert(!usePerfettoFormat);
     final timeline = await service.getVMTimeline(
       timeOriginMicros: _nextPollStartMicros,
       timeExtentMicros: currentVmTime.timestamp! - _nextPollStartMicros,
     );
-    _nextPollStartMicros = currentVmTime.timestamp! + 1;
 
     final newThreadNameEvents = <ThreadNameEvent>[];
     for (final event in timeline.traceEvents ?? <vm_service.TimelineEvent>[]) {
@@ -192,6 +224,65 @@ class TimelineEventsController extends PerformanceFeatureController
         }
       } else {
         allTraceEvents.add(eventWrapper);
+      }
+    }
+
+    updateThreadIds(newThreadNameEvents, isInitialUpdate: isInitialPull);
+  }
+
+  Future<void> _pullTraceEventsFromVmTimelinePerfettoImpl(
+    VmServiceWrapper service,
+    vm_service.Timestamp currentVmTime,
+    bool isInitialPull,
+  ) async {
+    assert(usePerfettoFormat);
+    final rawPerfettoTimeline =
+        await service.getPerfettoVMTimelineWithCpuSamples(
+      timeOriginMicros: _nextPollStartMicros,
+      timeExtentMicros: currentVmTime.timestamp! - _nextPollStartMicros,
+    );
+    final traceBinary = base64Decode(rawPerfettoTimeline.trace!);
+
+    if (perfettoTimeline == null) {
+      perfettoTimeline = Trace.fromBuffer(traceBinary);
+    } else {
+      perfettoTimeline!.mergeFromBuffer(traceBinary);
+    }
+
+    _nextPollStartMicros = currentVmTime.timestamp! + 1;
+
+    // None of the logic past this point is needed to get the proto loaded into
+    // Perfetto. This is the initial processing needed for handling Flutter
+    // specific functionality, but I haven't done much more than port the logic
+    // from _pullTraceEventsFromVmTimelineLegacyImpl.
+    final newThreadNameEvents = <ThreadNameEvent>[];
+
+    for (final packet in perfettoTimeline!.packet) {
+      if (packet.hasTrackDescriptor()) {
+        final trackDescriptor = packet.trackDescriptor;
+        final threadDescriptor = trackDescriptor.thread;
+        final threadNameEvent = ThreadNameEvent.fromPerfettoThead(
+          threadDescriptor,
+        );
+        final added = threadNameEvents.add(threadNameEvent);
+        if (added) {
+          newThreadNameEvents.add(threadNameEvent);
+          threadNameEventsByTrackId[trackDescriptor.uuid] = threadNameEvent;
+        }
+      } else if (packet.hasTrackEvent()) {
+        final event = packet.trackEvent;
+        // TODO: make sure this doesn't overflow a 53-bit int
+        final timestampNanos = packet.timestamp.toInt();
+        final traceEvent = PerfettoTraceEvent(
+          threadNameEventsByTrackId[event.trackUuid]!,
+          timestampNanos,
+          event,
+        );
+        final eventWrapper = PerfettoTraceEventWrapper(
+          traceEvent,
+          DateTime.now().millisecondsSinceEpoch,
+        );
+        allPerfettoTraceEvents.add(eventWrapper);
       }
     }
 
@@ -283,6 +374,24 @@ class TimelineEventsController extends PerformanceFeatureController
     );
     final processingTraceCount = traceEventCount - _nextTraceIndexToProcess;
     Future<void> processTraceEventsHelper() async {
+      // TODO(bkonyi): process perfetto data
+      //
+      // This is where things start to get really hairy when it comes to using
+      // the Perfetto format. DevTools makes a lot of assumptions based on the
+      // structure of the Chrome Trace Event format, many of which are deeply
+      // embedded in the logic for handling Flutter frame events. This includes:
+      //
+      //  - Reaching directly into the backing JSON of TraceEvent to poke at
+      //    some specific fields, something that isn't possible to do with the
+      //    Perfetto TrackEvents.
+      //
+      //  - Reliance on the CTE format's COMPLETE events, which don't exist in
+      //    the Perfetto format. See:
+      //    https://perfetto.dev/docs/reference/trace-packet-proto#TrackEvent.Type
+      //
+      //  - Reliance on the CTE's async begin/end events, which don't exist in
+      //    the Perfetto format. I _think_ Perfetto treats sync and async events
+      //    identically, where async events are simply logged to their own track.
       await perfettoController.processor.processData(
         allTraceEvents,
         startIndex: _nextTraceIndexToProcess,
@@ -306,7 +415,9 @@ class TimelineEventsController extends PerformanceFeatureController
         traceEventCount: processingTraceCount,
       ),
     );
-    await perfettoController.loadTrace(allTraceEvents);
+    await (usePerfettoFormat
+        ? perfettoController.loadPerfettoTrace(perfettoTimeline!)
+        : perfettoController.loadTrace(allTraceEvents));
   }
 
   Future<void> selectTimelineEvent(TimelineEvent? event) async {
@@ -523,6 +634,8 @@ class TimelineEventsController extends PerformanceFeatureController
       ..clear()
       ..addAll(traceEvents);
 
+    // TODO(bkonyi): handle perfetto trace events
+
     final uiThreadId = _threadIdForEvents({uiEventName}, traceEvents);
     final rasterThreadId = _threadIdForEvents({rasterEventName}, traceEvents);
     _primeThreadIds(uiThreadId: uiThreadId, rasterThreadId: rasterThreadId);
@@ -539,11 +652,14 @@ class TimelineEventsController extends PerformanceFeatureController
   @override
   Future<void> clearData() async {
     allTraceEvents.clear();
+    allPerfettoTraceEvents.clear();
+    perfettoTimeline = null;
     threadNameEvents.clear();
     _nextTraceIndexToProcess = 0;
     _unassignedFlutterFrameEvents.clear();
 
     threadNamesById.clear();
+    threadNameEventsByTrackId.clear();
     _workTracker.clear();
     legacyController.clearData();
     _status.value = EventsControllerStatus.empty;

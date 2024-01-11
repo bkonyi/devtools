@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import 'package:devtools_app_shared/utils.dart';
+import 'package:vm_service_protos/vm_service_protos.dart';
 
 import '../../../../../shared/primitives/trace_event.dart';
 import '../../../../../shared/primitives/utils.dart';
@@ -39,6 +40,7 @@ abstract class PerfettoController extends DisposableController {
   void onBecomingActive() {}
 
   Future<void> loadTrace(List<TraceEventWrapper> devToolsTraceEvents) async {}
+  Future<void> loadPerfettoTrace(Trace devToolsTraceEvents) async {}
 
   void scrollToTimeRange(TimeRange timeRange) {}
 

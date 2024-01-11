@@ -4,6 +4,8 @@
 
 // TODO(devoncarew): Upstream this class to the service protocol library.
 
+import 'package:vm_service_protos/vm_service_protos.dart';
+
 /// A single timeline event.
 class TraceEvent {
   /// Creates a timeline event given JSON-encoded event data.
@@ -132,6 +134,132 @@ class TraceEvent {
       '$name - [$timestampKey: $timestampMicros] [$durationKey: $duration]';
 }
 
+// TOD(bkonyi): this is very much a WIP version of [TraceEvent] for Perfetto
+// TrackEvents.
+/// A single Perfetto timeline event.
+class PerfettoTraceEvent {
+  /// Creates a timeline event given a Perfetto TrackEvent.
+  PerfettoTraceEvent(
+    ThreadNameEvent threadName,
+    this.timestampNanos,
+    this.trackEvent,
+  )   : name = trackEvent.name as String?,
+        category = trackEvent.categories.first as String?,
+        phase = trackEvent.type.name as String? {
+    processId = 0;
+    threadId = 0;
+    args = Map.fromEntries(
+      trackEvent.debugAnnotations.map(
+        (a) {
+          if (a.hasStringValue()) {
+            return MapEntry(a.name, a.stringValue);
+          } else if (a.hasLegacyJsonValue()) {
+            return MapEntry(a.name, a.legacyJsonValue);
+          } else {
+            throw StateError(
+              'We should not be writing annotations without values',
+            );
+          }
+        },
+      ),
+    );
+  }
+
+  static const gcCategory = 'GC';
+
+  static const frameNumberArg = 'frame_number';
+
+  /// Event name for thread name metadata events.
+  static const threadNameEvent = 'thread_name';
+
+  final TrackEvent trackEvent;
+
+  /// The name of the event.
+  ///
+  /// Corresponds to the "name" field in the JSON event.
+  final String? name;
+
+  /// Event category. Events with different names may share the same category.
+  ///
+  /// Corresponds to the "cat" field in the JSON event.
+  final String? category;
+
+  /// For a given long lasting event, denotes the phase of the event, such as
+  /// "B" for "event began", and "E" for "event ended".
+  ///
+  /// Corresponds to the "ph" field in the JSON event.
+  final String? phase;
+
+  /// ID of process that emitted the event.
+  ///
+  /// Corresponds to the "pid" field in the JSON event.
+  late final int? processId;
+
+  /// ID of thread that issues the event.
+  ///
+  /// Corresponds to the "tid" field in the JSON event.
+  late final int? threadId;
+
+  /// Each async event has an additional required parameter id. We consider the
+  /// events with the same category and id as events from the same event tree.
+  // String? get id => json[idKey] as String?;
+
+  /// An optional scope string can be specified to avoid id conflicts, in which
+  /// case we consider events with the same category, scope, and id as events
+  /// from the same event tree.
+  // String? get scope => json[scopeKey] as String?;
+
+  /// The duration of the event, in microseconds.
+  ///
+  /// Note, some events are reported with duration. Others are reported as a
+  /// pair of begin/end events.
+  ///
+  /// Corresponds to the "dur" field in the JSON event.
+  // final int? duration;
+
+  /// Time passed since tracing was enabled, in nanoseconds.
+  final int? timestampNanos;
+
+  /// Arbitrary data attached to the event.
+  late final Map<String, Object?>? args;
+
+  /*String get asyncUID =>
+      generateAsyncUID(id: id, category: category, scope: scope);*/
+
+  TimelineEventType? _type;
+
+  TimelineEventType get type => _type ??= TimelineEventType.other;
+
+  set type(TimelineEventType t) => _type = t;
+
+  /*TraceEvent copy({
+    String? name,
+    String? category,
+    String? phase,
+    int? processId,
+    int? threadId,
+    int? duration,
+    int? timestampMicros,
+    Map<String, dynamic>? args,
+  }) {
+    return TraceEvent({
+      nameKey: name ?? this.name,
+      categoryKey: category ?? this.category,
+      phaseKey: phase ?? this.phase,
+      processIdKey: processId ?? this.processId,
+      threadIdKey: threadId ?? this.threadId,
+      // durationKey: duration ?? this.duration,
+      timestampKey: timestampMicros ?? this.timestampMicros,
+      argsKey: args ?? this.args,
+    });
+  }
+
+  @override
+  String toString() => '$type event [$idKey: $id] [$phaseKey: $phase] '
+      '$name - [$timestampKey: $timestampMicros] [$durationKey: $duration]';
+      */
+}
+
 int _traceEventWrapperId = 0;
 
 class TraceEventWrapper implements Comparable<TraceEventWrapper> {
@@ -157,6 +285,28 @@ class TraceEventWrapper implements Comparable<TraceEventWrapper> {
   }
 }
 
+class PerfettoTraceEventWrapper
+    implements Comparable<PerfettoTraceEventWrapper> {
+  PerfettoTraceEventWrapper(this.event, this.timeReceived)
+      : wrapperId = _traceEventWrapperId++;
+  final PerfettoTraceEvent event;
+
+  final num timeReceived;
+
+  final int wrapperId;
+
+  bool get isShaderEvent => event.args!['devtoolsTag'] == 'shaders';
+
+  @override
+  int compareTo(PerfettoTraceEventWrapper other) {
+    // Order events based on their timestamps. If the events share a timestamp,
+    // order them in the order we received them.
+    final compare =
+        (event.timestampNanos ?? 0).compareTo(other.event.timestampNanos ?? 0);
+    return compare != 0 ? compare : wrapperId.compareTo(other.wrapperId);
+  }
+}
+
 String generateAsyncUID({
   required String? id,
   required String? category,
@@ -177,18 +327,32 @@ enum TimelineEventType {
 }
 
 class ThreadNameEvent {
-  const ThreadNameEvent._(this.name, this.threadId);
+  const ThreadNameEvent._(
+    this.name,
+    this.threadId,
+    this.processId,
+  );
 
   factory ThreadNameEvent.from(TraceEvent event) {
     final args = event.args!;
     return ThreadNameEvent._(
       args[TraceEvent.nameKey] as String?,
       event.threadId,
+      null, // TODO(bkonyi):
+    );
+  }
+
+  factory ThreadNameEvent.fromPerfettoThead(ThreadDescriptor descriptor) {
+    return ThreadNameEvent._(
+      descriptor.threadName,
+      descriptor.tid,
+      descriptor.pid,
     );
   }
 
   final String? name;
   final int? threadId;
+  final int? processId;
 
   @override
   bool operator ==(Object other) {
